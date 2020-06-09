@@ -12,6 +12,7 @@ CREATE [{ TEMPORARY | TEMP } | UNLOGGED ] TABLE [ IF NOT EXISTS ] table_name (
 [ INHERITS( parent_table [, ...] ) ]
 [ ON COMMIT { PRESERVE ROWS | DELETE ROWS | DROP }]
 [ WITH ( storage_parameter [= value] [, ...]) ]
+[ TABLESPACE tablesapce_name ]
 ```
 
 <br/>
@@ -21,6 +22,16 @@ CREATE [{ TEMPORARY | TEMP } | UNLOGGED ] TABLE [ IF NOT EXISTS ] table_name (
 -   `{ TEMPORARY | TEMP }`
 
 이 키워드가 함께 쓰인 테이블은 임시 테이블로 정의됩니다. `ASNI Standard`에 의하면 모든 세션에 임시 테이블이 생성되어야 하지만 `PostgreSQL`에서는 해당 세션에서만 임시 테이블을 생성합니다. 세션이 종료되면 해당 테이블은 `DROP`됩니다.
+
+```sql
+START TRANSACTION;
+CREATE TEMPORARY TABLE test (
+    x int
+);
+COMMIT;
+
+SELECT * FROM test; -- ERROR. NO SUCH TABLE.
+```
 
 <br/>
 
@@ -52,19 +63,98 @@ DROP TABLE T;
 
 -   `INHERITS`
 
-`PostgreSQL`에서 지원하는 특별한 구문입니다. 부모의 `Cloumn Definition`과 `Check / NOT NULL` 제약조건을 상속받습니다. `Table Constraint`나 `Index`까지 가져오지 않으므로 주의해야 합니다. 또한 `SELECT`로 자식을 조회하면 부모 데이터도 같이 조회되므로, 이것을 방지하려면 `FROM ONLY`를 사용해야 합니다.
+`PostgreSQL`에서 지원하는 특별한 구문입니다. 부모의 `Cloumn Definition`과 `Check / NOT NULL` 제약조건을 상속받습니다. `Table Constraint`나 `Index`까지 가져오지 않으므로 주의해야 합니다. 또한 `SELECT`로 부모를 조회하면 자식 데이터도 같이 조회되므로, 이것을 방지하려면 `FROM ONLY`를 사용해야 합니다.
+
+```sql
+-- DDL
+CREATE TABLE test1 (
+    x int
+);
+CREATE TABLE test2 (
+    y int
+)
+INHERITS (test1);
+
+-- DML
+INSERT INTO test1 VALUES (1);
+INSERT INTO test2 VALUES (2, 2);
+
+-- SELECT ... FROM
+SELECT * FROM test1;
+/*
+        x
+    --------
+        1
+        2
+*/
+
+-- SELECT ... FROM ONLY
+SELECT * FROM ONLY test1;
+/*
+        x
+    --------
+        2
+*/
+```
 
 <br/>
 
 -   `ON COMMIT` (임시 테이블에서만 사용할 수 있음.)
 
-트랜잭션에서 `COMMIT`을 만나면 수행할 동작을 정의합니다. `PRESERVE ROWS`는 커밋된 데이터를 보존시킵니다. `DELETE ROWS`는 커밋된 데이터를 삭제시킵니다. `DROP`은 테이블을 삭제합니다.
+트랜잭션에서 `COMMIT`을 만나면 수행할 동작을 정의합니다. `PRESERVE ROWS`는 테이블의 데이터를 보존합니다. `DELETE ROWS`는 데이터의 내용을 삭제합니다. `DROP`은 테이블 자체를 삭제합니다.
+
+```sql
+START TRANSACTION;
+CREATE TABLE test (
+    x int
+)
+ON COMMIT DROP;
+INSERT INTO test VALUES (1);
+COMMIT;
+
+SELECT * FROM test; -- ERROR. NO SUCH TABLE.
+```
 
 <br/>
 
 -   `WITH`
 
 해당 테이블에만 주어진 테이블 파라미터를 적용합니다. 단, 부모 테이블이 `OIDS = true`라면, `WITH`을 사용해도 강제로 `OIDS = true`로 지정됩니다.
+
+<br/>
+
+-   `TABLESPACE`
+
+테이블 스페이스란 데이터가 저장되는 물리적 공간, 즉 `FILE`을 의미합니다. 이 옵션을 지정하면 명시된 테이블 스페이스에 데이터가 저장됩니다.
+
+```sql
+CREATE TABLE TEST (
+    x int
+)
+TABLESPACE TEST_TABLESPACE;
+```
+
+테이블 스페이스 생성 구문은 다음과 같습니다.
+
+```sql
+CREATE TABLESPACE tablespace_name
+[ OWNER { new_owner | CURRENT_USER | SESSION_USER }]
+LOCATION 'absolute_directory_path'
+[ WITH (tablespace_option = value [, ...])]
+```
+
+각 테이블 스페이스에는 생성시에 지정한 소유자만 접근할 수 있습니다. `OWNER` 절을 생략하면 현재 유저가 지정됩니다. 생성된 이후에 사용할 수 있는 명령어의 구문은 다음과 같습니다.
+
+```sql
+-- 이름 변경
+ALTER TABLESPACE old_name RENAME TO new_name;
+
+-- 소유자 변경
+ALTER TABLESPACE tablespace_name OWNER TO new_owner;
+
+-- 삭제
+DROP TABLESPACE tablespace_name;
+```
 
 <br/>
 
