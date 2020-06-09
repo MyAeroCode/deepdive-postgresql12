@@ -6,6 +6,7 @@
 
 ### Chapters
 
-| chapter |                |
-| :-----: | -------------- |
-|    1    | `Create Table` |
+| chapter |                            |
+| :-----: | -------------------------- |
+|    1    | `Create Table`             |
+|    2    | `Create Partitioned Table` |
