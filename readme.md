@@ -10,3 +10,4 @@
 | :-----: | -------------------------- |
 |    1    | `Create Table`             |
 |    2    | `Create Partitioned Table` |
+|    3    | `Alter, Drop Table`        |
