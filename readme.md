@@ -6,9 +6,9 @@
 
 ### Chapters
 
-| chapter |                             |
-| :-----: | --------------------------- |
-|    1    | `Create Table`              |
-|    2    | `Create Partitioned Table`  |
-|    3    | `Alter, Drop Table`         |
-|    4    | `Create, Alter, Drop Index` |
+| chapter |                                             |
+| :-----: | ------------------------------------------- |
+|  `DDL`  |                                             |
+|    1    | `Create Table`, `Alter Table`, `Drop Table` |
+|    2    | `Create Partitioned Table`                  |
+|    3    | `Create Index`, `Alter Index`, `Drop Index` |

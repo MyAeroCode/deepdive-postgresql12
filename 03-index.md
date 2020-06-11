@@ -126,7 +126,7 @@ SELECT * FROM test WHERE x + y = 5;
 
 <br/>
 
-![](./images/04-01.png)
+![](./images/03-01.png)
 
 <br/>
 
@@ -174,7 +174,7 @@ WHERE x = 1;
 SELECT * FROM test WHERE x = 1;
 ```
 
-![](./images/04-02-01.png);
+![](./images/03-02-01.png);
 
 <br/>
 
@@ -184,7 +184,7 @@ SELECT * FROM test WHERE x = 1;
 SELECT * FROM test WHERE x = 2;
 ```
 
-![](./images/04-02-02.png);
+![](./images/03-02-02.png);
 
 ---
 
