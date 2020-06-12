@@ -1,6 +1,6 @@
-### PostgreSQL Deep Dive
+### PostgreSQL-12 Deep Dive
 
-보다 깊이있게 `PostgreSQL`을 다룹니다.
+보다 깊이있게 `PostgreSQL 12`를 다룹니다.
 
 ---
 
@@ -12,3 +12,5 @@
 |    1    | `Create Table`, `Alter Table`, `Drop Table` |
 |    2    | `Create Partitioned Table`                  |
 |    3    | `Create Index`, `Alter Index`, `Drop Index` |
+|  `DML`  |                                             |
+|    4    | `Select`                                    |
