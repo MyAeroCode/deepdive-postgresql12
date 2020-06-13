@@ -382,3 +382,130 @@ FROM   (VALUES (array[1, 2, 3], array[4, 5, 6])) as temp1(x, y),
 ```
 
 ![](./images/04-10.png)
+
+<br/>
+
+### `WHERE` Clause
+
+```sql
+WHERE boolean_expression
+```
+
+주어진 표현식이 `true`인 행만 결과집합에 포함시킵니다.
+
+<br/>
+
+`boolean`을 반환하는 연산자는 다음이 있습니다.
+
+**동등 및 대소비교:**
+
+-   `=`
+-   `>`
+-   `<`
+-   `>=`
+-   `<=`
+-   `<>` or `!=`
+-   `BETWEEN a AND b` : 주어진 숫자가 `a`이상 `b`이하라면 `true`.
+
+```sql
+SELECT 1 = 1; -- true
+SELECT 2 != 2 -- false
+SELECT 1 BETWEEN 1 AND 3; -- true
+SELECT 3 BETWEEN 1 AND 3; -- true
+```
+
+<br/>
+
+**논리 연산자 :**
+
+-   `NOT`
+-   `AND`
+-   `OR`
+
+```sql
+SELECT true AND true; -- true
+SELECT true OR false; -- true
+SELECT NOT false; -- true
+```
+
+<br/>
+
+**LIKE 표현식 :**
+
+-   `str LIKE exp` : `str`이 `exp`에 일치하면 `true`를 반환합니다.
+
+`LIKE`에 사용할 수 있는 특수기호는 다음과 같습니다.
+
+| 기호 | 의미                    |
+| :--: | ----------------------- |
+|  \_  | 임의의 한 글자에 매칭   |
+|  %   | 임의의 여러 글자에 매칭 |
+
+```sql
+SELECT 'Hello, World!' LIKE 'H_'; -- false
+SELECT 'Hello, World!' LIKE 'H%'; -- true
+SELECT 'Hello, World!' LIKE '%W%'; -- true
+```
+
+<br/>
+
+**SMILAR TO 정규 표현식 :**
+
+-   `str SIMILAR TO exp`
+-   `str NOT SIMILAR TO exp`
+
+`SIMILAR TO`에 사용할 수 있는 특수기호는 다음과 같습니다.
+
+|  기호  | 의미                                          |
+| :----: | --------------------------------------------- |
+|   \|   | 대체자. a 또는 b                              |
+|   \*   | 앞의 아이템이 0개 이상인 경우에 매칭          |
+|   +    | 앞의 아이템이 1개 이상인 경우에 매칭          |
+|  {m}   | 앞의 아이템이 m개인 경우에 매칭               |
+|  {m,}  | 앞의 아이템이 m개 이상인 경우에 매칭          |
+| {m, n} | 앞의 아이템이 m개 이상 n개 이하인 경우에 매칭 |
+|   ()   | 여러 아이템을 하나의 아이템으로 묶음          |
+| [...]  | 문자열을 각 문자로 쪼갬                       |
+
+```sql
+SELECT 'Hello, World!' SIMILAR TO '[a-zA-Z]*'; -- false
+SELECT 'Hello, Hello!' SIMILAR TO '(Hello(,|!) ){2}'; -- true
+```
+
+<br/>
+
+**POSIX 정규 표현식 :**
+
+-   `str ~ pattern` : 대소문자를 `엄격히` 비교하여 `str`이 `pattern`에 일치하면 `true`.
+-   `str ~* pattern`: 대소문자를 `느슨하게` 비교하여 `str`이 `pattern`에 일치하면 `true`.
+-   `str !~ pattern` : 대소문자를 `엄격히` 비교하여 `str`이 `pattern`에 일치하지 않으면 `true`.
+-   `str !~* pattern` : 대소문자를 `느슨하게` 비교하여 `str`이 `pattern`에 일치하지 않으면 `true`.
+
+```sql
+SELECT 'Hello, World!' ~ '^H.*!$'; -- true;
+```
+
+자세한 사항은 공식문서의 [POSIX-REGEXP](https://www.postgresql.org/docs/12/functions-matching.html#FUNCTIONS-POSIX-REGEXP)를 참조해주세요.
+
+<br/>
+
+**포함 및 미포함 :**
+
+-   `IN` : 주어진 항목이 리스트에 있다면 `true`.
+-   `NOT IN` : 주어진 항목에 리스트에 없다면 `true`.
+-   `EXISTS` : 주어진 서브쿼리가 공집합이 아니라면 `true`.
+-   `NOT EXISTS` : 주어진 서브쿼리가 공집합이 이라면 `true`.
+
+```sql
+-- Single Column.
+SELECT 1 IN (1, 2, 3); -- true
+
+-- Multi Column.
+SELECT (1, 2) NOT IN ((1, 2), (3, 4), (5, 6)); -- false
+```
+
+```sql
+SELECT EXISTS ( SELECT 1 ); -- true;
+
+SELECT NOT EXISTS ( SELECT 1 WHERE false ); -- true;
+```
