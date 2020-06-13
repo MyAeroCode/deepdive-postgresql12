@@ -184,3 +184,201 @@ SELECT * FROM test;
 <br/>
 
 `WITH`에 사용된 서브쿼리는 여러번 참조되어도 한 번만 계산되도록 제한되어 있기 때문에 별도의 실행계획을 사용하지만, `NOT MATERIALIZED`가 함께 사용하면 이러한 제한을 제거할 수 있으며, 주 쿼리와 서브 쿼리를 풀어내어 계산하므로 더 좋은 실행계획을 찾을 가능성이 높아집니다. 그러나 이것은 휘발성이 존재하는 쿼리인 경우에만 작동하고, 휘발성이 아닌 쿼리(`재귀적`이거나 `부작용이 없는` 쿼리)라고 판단되면 `NOT MATERIALIZED`는 무시됩니다.
+
+<br/>
+
+### `FROM` Clause
+
+```sql
+where from_item can be one of:
+
+    [ ONLY ] table_name [ * ] [ [ AS ] alias [ ( column_alias [, ...] ) ] ]
+                [ TABLESAMPLE sampling_method ( argument [, ...] ) [ REPEATABLE ( seed ) ] ]
+    [ LATERAL ] ( select ) [ AS ] alias [ ( column_alias [, ...] ) ]
+    with_query_name [ [ AS ] alias [ ( column_alias [, ...] ) ] ]
+    [ LATERAL ] function_name ( [ argument [, ...] ] )
+                [ WITH ORDINALITY ] [ [ AS ] alias [ ( column_alias [, ...] ) ] ]
+    [ LATERAL ] function_name ( [ argument [, ...] ] ) [ AS ] alias ( column_definition [, ...] )
+    [ LATERAL ] function_name ( [ argument [, ...] ] ) AS ( column_definition [, ...] )
+    [ LATERAL ] ROWS FROM( function_name ( [ argument [, ...] ] ) [ AS ( column_definition [, ...] ) ] [, ...] )
+                [ WITH ORDINALITY ] [ [ AS ] alias [ ( column_alias [, ...] ) ] ]
+    from_item [ NATURAL ] join_type from_item [ ON join_condition | USING ( join_column [, ...] ) ]
+```
+
+`FROM`절은 해당 쿼리에서 사용할 데이터 소스의 목록을 지정하는 역할을 합니다. 만약 여러개의 소스가 지정되었다면, 모든 소스를 카테시안 곱셈(`CROSS-JOIN`)한 결과를 반환합니다. 이 때, `WHERE`절을 명시적으로 추가하여 카테시안 곱셈의 작은 부분집합을 가져올 수 있습니다.
+
+<br/>
+
+데이터 소스는 다음 중 하나를 허용합니다.
+
+-   테이블
+-   서브쿼리
+-   `WITH`절에 선언된 쿼리
+-   함수호출
+
+<br/>
+
+데이터 소스로 `테이블`을 사용할 수 있습니다. 만약 `ONLY`를 테이블 이름의 앞에 사용했다면, 해당 테이블만 스캔 되도독(=자식 테이블이 스캔되지 않도록) 지정할 수 있습니다. 만약 `*`를 테이블 이름의 뒤에 사용했다면, 명시적으로 모든 자식 테이블을 데이터 소스로 지정할 수 있습니다.
+
+```sql
+-- X의 자식 테이블은 제외.
+FROM ONLY X;
+
+-- X의 모든 자식 테이블도 포함.
+FROM X;
+FROM X*;
+```
+
+<br/>
+
+데이터 소스로 `서브쿼리`를 사용할 수 있습니다. 이 경우, 해당 서브쿼리는 `Temporary Table`로 구체화되어 쿼리에서 사용됩니다. 각각의 서브쿼리는 반드시 괄호로 감싸야하며 `alias`도 함께 주어져야 합니다. `VALUES ...` 또한 서브쿼리로 사용할 수 있습니다.
+
+```sql
+SELECT *
+FROM ( SELECT 1 AS x, 2 AS y ) AS TEST;
+
+-- 또는
+SELECT *
+FROM ( SELECT 1, 2 ) AS TEST(x, y);
+
+-- 또는
+SELECT *
+FROM ( VALUES (1, 2) ) AS TEST(x, y);
+
+-- Multiple Values
+SELECT *
+FROM ( VALUES (1, 2), (3, 4), ... ) AS TEST(x, y);
+```
+
+<br/>
+
+데이터 소스로 `WITH절에 선언된 쿼리`를 사용할 수 있습니다. 만약 `WITH-QUERY`의 이름과 중복되는 테이블이 있다면 `WITH-QUERY`가 우선적으로 사용됩니다. 즉, 기존 테이블의 이름은 가려집니다.
+
+```sql
+-- 테이블 생성
+CREATE TABLE TEST (
+    x int
+);
+INSERT INTO TEST VALUES (1), (2), (3);
+
+-- 기존 테이블의 이름과 겹치도록 WITH 쿼리를 생성
+WITH TEST AS (
+    SELECT * FROM ( VALUES (4), (5), (6) ) AS TEST(y)
+)
+SELECT * FROM TEST;
+```
+
+![](./images/04-03.png)
+
+<br/>
+
+데이터 소스로 `함수호출`을 사용할 수 있습니다. 일반적으로는 모든 함수를 사용할 수 있지만, 보편적으로는 집합을 반환하는 함수가 사용됩니다. `WITH ORDINALITY`가 함께 사용되면, 마지막 컬럼에 `bigint`형식의 데이터 순번이 부여됩니다.
+
+```sql
+SELECT *
+FROM   unnest( array['x', 'y', 'z'] ) AS test(token);
+```
+
+![](./images/04-04.png)
+
+```sql
+SELECT *
+FROM   unnest(array['x', 'y', 'z']) WITH ORDINALITY AS test(token, seq);
+```
+
+![](./images/04-05.png)
+
+<br/>
+
+기본적으로 `FROM`에서 `Right-Hand Element`는 `Left-Hand Element`의 데이터를 읽을 수 없습니다. 그러나 `SUB-SELECT` 또는 `FUNCTION-CALL`의 앞에 `LATERAL` 키워드를 함께 사용하면, 해당 요소의 좌측에서 선언된 데이터를 읽을 수 있습니다.
+
+```sql
+-- 샘플 데이터 테이블
+CREATE TABLE test (
+	x int,
+	y int
+);
+INSERT INTO test VALUES (1, 1), (1, 2), (1, 3), (2, 1),  (2, 5), (2, 6);
+```
+
+먼저 잘못된 쿼리부터 살펴보겠습니다. 우측 인라인뷰에서 `(test.)x`와 `(test.)y`를 읽으려고 했지만, 기본적으로 좌측의 테이블의 데이터를 읽을 수 없으므로 에러가 발생합니다.
+
+```sql
+SELECT *
+FROM   test, ( SELECT x + y ) as sub("x+y");
+
+[output]
+ERROR:  column "x" does not exist
+There is a column named "x" in table "test", but it cannot be referenced from this part of the query.
+```
+
+하지만 `LATERAL` 키워드를 함께 사용하면 좌측의 `test`의 컬럼을 읽을 수 있습니다.
+
+```sql
+SELECT *
+FROM   test, LATERAL ( SELECT x + y ) as sub("x+y");
+```
+
+![](./images/04-06.png)
+
+이것을 `JOIN`과 함께 사용하면 `상호 연관 서브쿼리`와 결과가 같아집니다. 예를 들어, 각 `x`마다 그룹을 지어 `y`가 평균보다 큰 행만 출력하는 작업을 `상호 연관 서브쿼리`로 작성해보면 다음과 같습니다.
+
+```sql
+SELECT *
+FROM   test t1
+WHERE  y > (
+    SELECT avg(t2.y)
+    FROM   test t2
+    WHERE  t2.x = t1.x
+);
+```
+
+![](./images/04-07.png)
+
+위의 쿼리가 동작하는 방식은 다음과 같습니다.
+
+1. `메인쿼리`에서 `t1.x`를 읽을 때 마다 `서브쿼리`에 전달합니다.
+2. `서브쿼리`에서 `t1.x`에 해당하는 `t2.y`를 읽어 평균을 구하고 반환합니다.
+3. `WHERE`절에서 평균보다 큰 행만 가져옵니다.
+
+`메인쿼리`에서 참조되는 데이터가 읽힐 때 마다 `서브쿼리`에 삽입되어 호출됩니다. 호출된 횟수는 실행계획의 `LOOP` 항목을 통해 확인할 수 있습니다.
+
+![](./images/04-09.png)
+
+<br/>
+
+이것과 동일한 결과를 반환하는 쿼리를 `LATERAL JOIN`으로도 작성할 수 있습니다.
+
+```sql
+SELECT t1.*
+FROM   test as t1 JOIN LATERAL (
+    SELECT avg(t2.y)
+    FROM   test as t2
+    WHERE  t2.x = t1.x
+) as sub
+ON    t1.y > avg;
+-- OR
+WHERE t1.y > avg;
+```
+
+위의 쿼리가 동작하는 방식은 다음과 같습니다.
+
+1. `좌측`에서 `t1.x`를 읽을 때 마다 `우측`에 전달합니다.
+2. `우측`에서 `t1.x`에 해당하는 `t2.y`를 읽어 평균을 구합니다.
+3. `ON`절 또는 `WHERE`절에서 평균보다 큰 행만 가져옵니다.
+
+`좌측쿼리`에서 참조되는 데이터가 읽힐 때 마다 `우측쿼리(=LATERAL Query)`에 삽입되어 호출됩니다. 호출된 횟수는 실행계획의 `LOOP` 항목을 통해 확인할 수 있습니다.
+
+![](./images/04-08.png)
+
+<br/>
+
+`LATERAL`은 함수호출의 앞에 사용할 수 있지만, 이 경우에는 `Noise Word`입니다. 있으나 없으나 `LATERAL`로 간주되기 때문입니다.
+
+```sql
+SELECT  temp2.*
+FROM   (VALUES (array[1, 2, 3], array[4, 5, 6])) as temp1(x, y),
+       unnest(x, y) as temp2(a, b); -- Implicit LATERAL
+```
+
+![](./images/04-10.png)
