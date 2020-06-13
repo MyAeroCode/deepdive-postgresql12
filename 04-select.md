@@ -69,7 +69,17 @@ SELECT [ ALL | DISTINCT [ ON ( expression [, ...] ) ] ]
 
 <br/>
 
-`WITH RECURSIVE` 형태로 사용된다면 뷰가 자기 자신을 참조하는 것을 허용합니다. 이 경우 재귀참조는 `UNION [ALL]`의 우측에 존재해야 합니다.
+`WITH RECURSIVE` 형태로 사용된다면 뷰가 자기 자신을 참조하는 것을 허용합니다. 이 경우 재귀참조는 아래처럼 `UNION [ALL | DISTINCT]`의 우측에 존재해야 합니다.
+
+```sql
+WITH RECURSIVE
+test AS (
+    NON-RECURSIVE-SELECT
+    UNION [ALL | DISTINCT]
+    RECURSIVE-SELECT
+)
+...
+```
 
 ```sql
 WITH RECURSIVE
@@ -153,7 +163,7 @@ SELECT * FROM test1;
 
 <br/>
 
-`PRIMARY QUERY`와 `WITH QUERY`는 동일한 시간값을 가지고 실행되므로 `WITH`에서 데이터를 수정해도 `RETUNING`을 제외한 다른 방법으로 변경된 데이터를 감지하는 것은 불가능하다. 따라서 두 서브쿼리가 동일한 행을 수정하려고 하면, 예측할 수 없는 결과가 만들어진다.
+`PRIMARY QUERY`와 `WITH QUERY`는 동일한 시간값을 가지고 실행되므로 `WITH`에서 데이터를 수정해도 `RETUNING`을 제외한 다른 방법으로 변경된 데이터를 감지하는 것은 불가능합니다. 따라서 아래처럼 두 서브쿼리가 동일한 행을 수정하려고 하면 예측할 수 없는 결과가 만들어집니다.
 
 ```sql
 CREATE TABLE test (
@@ -173,4 +183,4 @@ SELECT * FROM test;
 
 <br/>
 
-`WITH`에 사용된 서브쿼리는 여러번 참조되어도 한 번만 계산되도록 제한되어 있기 때문에 별도의 실행계획을 사용하지만, `NOT MATERIALIZED`가 함께 사용하면 이러한 제한을 제거할 수 있습으며, 주 쿼리와 서브 쿼리를 풀어내어 계산하므로 더 좋은 실행계획을 찾을 가능성이 높아집니다. 그러나 이것은 휘발성이 존재하는 쿼리인 경우에만 작동하고, 휘발성이 아닌 쿼리(`재귀적`이거나 `부작용이 없는` 쿼리)라고 판단되면 `NOT MATERIALIZED`는 무시됩니다.
+`WITH`에 사용된 서브쿼리는 여러번 참조되어도 한 번만 계산되도록 제한되어 있기 때문에 별도의 실행계획을 사용하지만, `NOT MATERIALIZED`가 함께 사용하면 이러한 제한을 제거할 수 있으며, 주 쿼리와 서브 쿼리를 풀어내어 계산하므로 더 좋은 실행계획을 찾을 가능성이 높아집니다. 그러나 이것은 휘발성이 존재하는 쿼리인 경우에만 작동하고, 휘발성이 아닌 쿼리(`재귀적`이거나 `부작용이 없는` 쿼리)라고 판단되면 `NOT MATERIALIZED`는 무시됩니다.
