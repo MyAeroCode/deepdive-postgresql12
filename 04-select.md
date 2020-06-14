@@ -509,3 +509,311 @@ SELECT EXISTS ( SELECT 1 ); -- true;
 
 SELECT NOT EXISTS ( SELECT 1 WHERE false ); -- true;
 ```
+
+<br/>
+
+### `GROUP BY` Clause
+
+```sql
+GROUP BY grouping_element [, ...]
+```
+
+`GROUP BY`절은 하나 이상의 컬럼을 그룹으로 묶어 `동일한 그룹 값`을 갖는 여러 데이터들을 `집계 함수`를 통해 하나의 행으로 압축하는 역할을 수행합니다. 아래는 각 `(학년, 반)`의 평균 키를 구하는 예제입니다.
+
+![](./images/04-11.png)
+
+\*\* `GROUP BY`절이 적용되었다면 결과행은 개수는 `그룹의 개수`보다 커질 수 없습니다.
+
+**테스트 데이터 :**
+
+```sql
+CREATE TABLE students (
+    grade int,
+    class int,
+    name text,
+    sex text,
+    height int
+);
+INSERT INTO students VALUES
+    (1, 1, 'grace', 'f', 164),
+    (1, 1, 'erica', 'f', 174),
+    (1, 2, 'caden', 'm', 182),
+    (2, 1, 'lucas', 'm', 177),
+    (2, 1, 'irene', 'f', 167);
+```
+
+**각 (학년, 반) 마다 평균키 계산 :**
+
+```sql
+SELECT grade, class, avg(height) as "avg_height"
+FROM   students
+GROUP BY (grade, class);
+```
+
+<br/>
+
+#### SELECT 인덱스 사용
+
+`GROUP BY`는 `SELECT`에서 사용된 순서대로 1부터 번호를 매기고 있기 때문에, 위의 쿼리는 다음처럼 바꿔 사용할 수 있습니다.
+
+```sql
+SELECT grade, class, avg(height) as "avg_height"
+FROM   students
+GROUP BY (1, 2);
+```
+
+<br/>
+
+#### 컬럼 이름 규칙
+
+컬럼의 이름에 `입력 컬럼이름`과 `결과 컬럼이름`을 둘 다 사용할 수 있지만, 둘의 이름이 겹친경우 `입력 컬럼이름`을 우선적으로 사용합니다. 먼저 `결과 컬럼이름`을 사용할 수 있다는 것 부터 확인하겠습니다. 다음 쿼리는 정상적으로 실행됩니다.
+
+```sql
+SELECT grade as "g", class as "c", avg(height) as "avg_height"
+FROM   students
+GROUP BY (g, c);
+```
+
+이번에는 일부러 `class`의 이름만 `grade`로 바꿔보았습니다. 다음 쿼리는 에러가 발생할 것 같지만 `입력 컬럼이름을 우선적으로 사용한다`는 규칙에 의해 정상적으로 실행됩니다.
+
+```sql
+SELECT grade, class as "grade", avg(height) as "avg_height"
+FROM   students
+GROUP BY (grade, class);
+```
+
+<br/>
+
+#### 정보 손실 규칙
+
+그룹화에 사용되지 않은 데이터는 `집계함수 없이 사용할 수 없습니다`. 즉, 다음 쿼리는 실행되지 않습니다.
+
+```sql
+SELECT grade, class, height
+FROM   students
+GROUP BY (grade, class);
+```
+
+<br/>
+
+#### 컬럼 결합 규칙
+
+`GROUPING SETS`, `CUBE` 또는 `ROLL UP`을 사용하지 않은 다중 그룹은, 단일 그룹으로 결합됩니다. 즉, 아래의 쿼리는 모두 동일한 동작을 수행합니다.
+
+```sql
+GROUP BY (grade, class, sex);
+
+-- OR
+GROUP BY (grade), (class), (sex);
+
+-- OR
+GROUP BY (grade, class), (sex);
+
+-- OR
+GROUP BY (grade), (class, (sex);
+
+-- OR
+GROUP BY grade, class, sex;
+```
+
+<br/>
+
+#### 다차원 분석
+
+`GROUPING SETS`, `CUBE` 또는 `ROLL UP`을 사용하면 `여러 각도`에서 좀 더 복잡한 그룹화를 수행할 수 있습니다. 이것을 `다차원 분석`이라고 합니다.
+
+<br/>
+
+`GROUPING SETS`는 각각의 그룹화 표현식을 사용하여 쿼리를 실행하고 각각의 결과를 결합합니다. 예를 들어, 다음 쿼리는 `(grade)`, `(class)`, `(sex)`에 대해 쿼리를 수행한 뒤 결과를 결합합니다. 이 때, 그룹화에 사용되지 않은 컬럼은 `null`로 출력됩니다.
+
+```sql
+SELECT grade, class, sex, avg(height) as "avg_height"
+FROM   students
+GROUP BY GROUPING SETS ((grade), (class), (sex));
+```
+
+![](./images/04-12.png)
+
+만약 비어있는 컬럼집합을 사용한다면, 모든 데이터가 집계 함수로 넘어갑니다. 아무 컬럼도 사용되지 않아 `(null, null)`로 출력되었을 겁니다. 즉, 아래 사진에서 `172.8`이 전체 학생의 평균키입니다.
+
+```sql
+SELECT grade, class, avg(height) as "avg_height"
+FROM   students
+GROUP BY GROUPING SETS ((grade), (class), ());
+```
+
+![](./images/04-13.png)
+
+비어있는 컬럼집합을 통해 알 수 있듯이, `다차원 분석`에 넘겨진 그룹의 컬럼이 일치하지 않아도 괜찮습니다.
+
+```sql
+SELECT grade, class, sex, avg(height) as "avg_height"
+FROM   students
+GROUP BY GROUPING SETS ((grade, sex), (class), ());
+```
+
+![](./images/04-14.png)
+
+<br/>
+
+`ROLLUP`은 각각의 그룹화 표현식 리스트를 뒤에서부터 하나씩 제거하면서(`말아 올라가면서`), 쿼리를 수행하고 각각의 결과를 결합합니다. `ROLLUP`을 `GROUPING SETS`로 표현하면 다음과 같습니다.
+
+```sql
+ROLLUP(a, b, c, ...)
+
+GROUPING SETS (
+    (a, b, c, ...),
+    ...,
+    (a, b, c),
+    (a, b),
+    (a),
+    ()
+)
+```
+
+예를 들어, 다음 쿼리는 `(grade, class, sex)`부터 시작하여 `(grade, class)`, `(grade)`, `()`까지 집계함수를 실행합니다.
+
+```sql
+SELECT grade, class, sex, avg(height) as "avg_height"
+FROM   students
+GROUP BY ROLLUP(grade, class, sex);
+-- OR
+GROUP BY ROLLUP((grade), (class), (sex));
+```
+
+![](./images/04-15.png)
+
+당연하지만, 이번에도 각각의 표현식에 사용된 컬럼의 개수는 일치하지 않아도 괜찮습니다. 이번에는 `((grade, class), (sex))`부터 시작하여 `((grade, class))`, `()`까지 집계함수를 실행합니다.
+
+```sql
+SELECT grade, class, sex, avg(height) as "avg_height"
+FROM   students
+GROUP BY ROLLUP((grade, class), (sex));
+```
+
+![](./images/04-16.png)
+
+<br/>
+
+`CUBE`는 각각의 그룹화 표현식 리스트에서 `가능한 모든 조합`을 생성해낸 뒤, 집계함수를 실행하고 각각의 결과를 결합합니다. `CUBE`을 `GROUPING SETS`로 표현하면 다음과 같습니다.
+
+```sql
+CUBE (a, b, c);
+-- OR
+CUBE ((a), (b), (c));
+
+GROUPING SETS (
+    ( a, b, c ),
+    ( a, b    ), -- (a, b)
+    ( a,    c ), -- (a, c)
+    ( a       ), -- (a)
+    (    b, c ), -- (b, c)
+    (    b    ), -- (b)
+    (       c ), -- (c)
+    (         )  -- ( )
+)
+```
+
+마찬가지로, 각각의 표현식에 사용된 컬럼의 개수가 동일하지 않아도 괜찮습니다. 아래의 쿼리는 다음 조합을 생성하여 집계함수에 넘깁니다.
+
+-   `((grade, class), (sex))`
+-   `((grade, class))`
+-   `((sex))`
+-   `()`
+
+```sql
+SELECT grade, class, sex, avg(height) as "avg_height"
+FROM   students
+GROUP BY CUBE((grade, class), (sex));
+```
+
+![](./images/04-17.png)
+
+<br/>
+
+#### 암묵적 그룹화
+
+`GROUP BY`를 사용하지 않고 `집계 함수`를 사용할 수 있습니다. 이 경우 `비어있는 그룹화 표현식`을 사용한 것으로 간주됩니다.
+
+```sql
+SELECT avg(height) as "avg_height"
+FROM   students
+-- GROUP BY ()
+```
+
+이 때, 다른 컬럼을 이용하려고 하면 `데이터 손실 규칙`를 위반하므로 에러가 발생합니다.
+
+```sql
+SELECT grade, class, avg(height) as "avg_height"
+FROM   students
+-- GROUP BY ()
+```
+
+<br/>
+
+#### 자주 사용되는 집계함수
+
+-   `avg(exp)` : `null`이 아닌 값을 평균냄
+-   `sum(exp)` : `null`이 아닌 값을 합계냄
+-   `min(exp)` : `null`이 아닌 최소값을 찾아냄
+-   `max(exp)` : `null`이 아닌 최대값을 찾아냄
+-   `count(exp)` : `null`이 아닌 값의 개수를 반환함
+-   `count(*)` : 모든 행의 개수를 반환함
+
+더 많은 집계함수는 [여기](https://www.postgresql.org/docs/12/functions-aggregate.html)에서 확인할 수 있습니다.
+
+<br/>
+
+#### 반드시 알아야 하는 집계함수 성능 향상법
+
+위에서 보듯이 `null`이 아닌 값을 알아서 거르기 때문에, 각 컬럼마다 `null이면 0으로 치환`할 필요가 전혀 없으며, 불필요한 계산으로 인해 성능을 감소시키는 좋지 않은 패턴입니다. 단, `대상이 아무것도 없는 경우`에는 집계함수 자체가 `null`을 반환하기 때문에, 겉에서는 치환해야 합니다.
+
+```sql
+avg(COALESCE(height, 0)); -- SO BAD.
+COALESCE(avg(height), 0); -- GOOD!
+```
+
+<br/>
+
+### `HAVING` Clause
+
+```sql
+HAVING condition
+```
+
+`GROUP BY`을 수행하고 조건을 만족하지 않는 그룹을 결과에서 제거합니다. 기본적은 사항은 `WHERE`과 같으나 `집계함수`를 사용할 수 있다는 점이 다릅니다. 먼저 필터링하기 전의 쿼리와 그 결과부터 보고 시작하겠습니다.
+
+```sql
+SELECT grade, class, avg(height) as "avg_height"
+FROM   students
+GROUP BY (grade, class);
+```
+
+![](./images/04-18.png)
+
+클래스가 `1반`이고, 평균키가 `170`이상인 그룹만 남도록 필터링하면...
+
+```sql
+SELECT grade, class, avg(height) as "avg_height"
+FROM   students
+GROUP BY (grade, class)
+HAVING class = 1 AND 170 <= avg(height);
+```
+
+![](./images/04-19.png)
+
+<br/>
+
+#### `WHERE`절에서 먼저 필터링하자
+
+`1반`이 아닌 반은 어차피 거를 것 임에도 불구하고, `집계함수`의 대상으로 포함되었기 때문에 불필요한 계산이 발생했다고 볼 수 있습니다. `WHERE`절이 먼저 실행되므로 다음 쿼리가 더 좋은 판단입니다.
+
+```sql
+SELECT grade, class, avg(height) as "avg_height"
+FROM   students
+WHERE  class = 1
+GROUP BY (grade, class)
+HAVING 170 <= avg(height);
+```
+
+하지만 최신의 데이터베이스는 `집계함수가 사용되지 않은 조건절`을 `WHERE`로 옮기도록 최적화하기 때문에 어떤 쿼리를 사용해도 괜찮긴 하지만, 왜 성능이 향상되는지는 알아두는 편이 좋습니다.
