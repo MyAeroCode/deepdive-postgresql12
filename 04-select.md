@@ -817,3 +817,219 @@ HAVING 170 <= avg(height);
 ```
 
 하지만 최신의 데이터베이스는 `집계함수가 사용되지 않은 조건절`을 `WHERE`로 옮기도록 최적화하기 때문에 어떤 쿼리를 사용해도 괜찮긴 하지만, 왜 성능이 향상되는지는 알아두는 편이 좋습니다.
+
+<br/>
+
+### `WINDOW` Clause
+
+#### 문법
+
+```sql
+function_name ([expression [, expression ... ]]) [ FILTER ( WHERE filter_clause ) ] OVER window_name
+function_name ([expression [, expression ... ]]) [ FILTER ( WHERE filter_clause ) ] OVER ( window_definition )
+function_name ( * ) [ FILTER ( WHERE filter_clause ) ] OVER window_name
+function_name ( * ) [ FILTER ( WHERE filter_clause ) ] OVER ( window_definition )
+```
+
+`window_definition` :
+
+```sql
+[ existing_window_name ]
+[ PARTITION BY expression [, ...] ]
+[ ORDER BY expression [ ASC | DESC | USING operator ] [ NULLS { FIRST | LAST } ] [, ...] ]
+[ frame_clause ]
+```
+
+`frame_clause` is one of :
+
+```sql
+{ RANGE | ROWS | GROUPS } frame_start [ frame_exclusion ]
+{ RANGE | ROWS | GROUPS } BETWEEN frame_start AND frame_end [ frame_exclusion ]
+```
+
+`frame_start`, `frame_end` is one of :
+
+```sql
+UNBOUNDED PRECEDING
+offset PRECEDING
+CURRENT ROW
+offset FOLLOWING
+UNBOUNDED FOLLOWING
+```
+
+`frame_exclusion` is one of :
+
+```sql
+EXCLUDE CURRENT ROW
+EXCLUDE GROUP
+EXCLUDE TIES
+EXCLUDE NO OTHERS
+```
+
+<br/>
+
+#### 집계함수와 차이점
+
+`WINDOW`절은 `GROUP BY`와 유사하지만 다중 행을 단일 행으로 압축하지는 않습니다.
+
+![](./images/04-20.png)
+
+하지만 윈도우 함수와 집계 함수는 거의 동일하기 때문에, `OVER ...`구문을 사용해야 윈도우 함수로 동작합니다. `OVER...`구문이 사용되지 않은 경우에는 집계 함수로 동작합니다.
+
+```sql
+-- sum은 집계 함수
+SELECT sum(salary) FROM empsalary;
+
+-- sum은 윈도우 함수
+SELECT sum(salary) OVER () FROM empsalary;
+```
+
+<br/>
+
+#### 매커니즘
+
+윈도우 함수는 `파티션`과 `프레임`이라는 특별한 개념을 사용하는데, 간단하게 설명하면 다음과 같습니다.
+
+-   프레임 : `행`의 집합
+-   파티션 : `프레임`의 집합
+-   테이블 : `파티션`의 집합
+
+![](./images/04-21.png)
+
+각 행은 `자신이 속한 프레임의 식별자`를 가지고 있고, 윈도우 함수는 `최상위 프레임`에서 시작해서 `각 프레임 구간`에 윈도우 함수를 적용합니다.
+
+<br/>
+
+`프레임 구간`은 꽤 중요한 용어입니다. `연속된 1개 이상의 프레임`이 동시에 윈도우 함수에 전달될 수 있다는 것을 의미하기 때문입니다. `PostgreSQL`이 기본적으로 사용하는 파티션 구간은 다음과 같습니다.
+
+-   `프레임 시작점` : 각 파티션의 첫 번째 프레임
+-   `프레임 종료점` : 현재 가르키고 있는 프레임
+
+<br/>
+
+위의 기본값이 의미하는 것은 `같은 파티션에서는 프레임이 누적된다`는 것이며, 어떤 파티션이 `[x, y, z]`라는 프레임으로 나눠져 있다면, 각각 `[x]`, `[x, y]`, `[x, y, z]`를 타겟으로 하는 윈도우 함수가 차례대로 호출된다는 것입니다.
+
+<br/>
+
+#### PARTITION BY
+
+`OVER (PARTITION BY ...)` 구문을 사용하여 테이블을 파티션으로 나눌 수 있습니다. 먼저 예제 데이터를 생성합니다.
+
+```sql
+CREATE TABLE empsalary (
+    depname text,
+    empno int,
+    salary int
+);
+
+INSERT INTO empsalary VALUES
+    ('develop', 11, 5200),
+    ('develop', 7, 4200),
+    ('develop', 9, 4500),
+    ('develop', 8, 6000),
+    ('develop', 10, 5200),
+    ('personnel', 5, 3500),
+    ('personnel', 2, 3900),
+    ('sales', 3, 4800),
+    ('sales', 1, 5000),
+    ('sales', 4, 4800);
+```
+
+`depname`을 기준으로 파티션을 나누고, 각 파티션의 평균 임금을 구해보겠습니다. 윈도우 함수는 `프레임`에만 적용된다는 것을 생각하면 의아할 수 있으나, `ORDER BY`가 생략되면 각 파티션이 하나의 프레임으로 간주되기 때문에 괜찮습니다.
+
+```sql
+SELECT depname, empno, salary, avg(salary) OVER (PARTITION BY depname) FROM empsalary;
+```
+
+| depname   | empno | salary | avg                   |
+| --------- | ----- | ------ | --------------------- |
+| develop   | 11    | 5200   | 5020.0000000000000000 |
+| develop   | 7     | 4200   | 5020.0000000000000000 |
+| develop   | 9     | 4500   | 5020.0000000000000000 |
+| develop   | 8     | 6000   | 5020.0000000000000000 |
+| develop   | 10    | 5200   | 5020.0000000000000000 |
+| personnel | 5     | 3500   | 3700.0000000000000000 |
+| personnel | 2     | 3900   | 3700.0000000000000000 |
+| sales     | 3     | 4800   | 4866.6666666666666667 |
+| sales     | 1     | 5000   | 4866.6666666666666667 |
+| sales     | 4     | 4800   | 4866.6666666666666667 |
+
+<br/>
+
+`PARTITION BY`를 지정하지 않았다면 테이블이 하나의 파티션이 됩니다.
+
+```sql
+SELECT depname, empno, salary, avg(salary) OVER () FROM empsalary;
+```
+
+| depname   | empno | salary | avg                   |
+| --------- | ----- | ------ | --------------------- |
+| develop   | 11    | 5200   | 4710.0000000000000000 |
+| develop   | 7     | 4200   | 4710.0000000000000000 |
+| develop   | 9     | 4500   | 4710.0000000000000000 |
+| develop   | 8     | 6000   | 4710.0000000000000000 |
+| develop   | 10    | 5200   | 4710.0000000000000000 |
+| personnel | 5     | 3500   | 4710.0000000000000000 |
+| personnel | 2     | 3900   | 4710.0000000000000000 |
+| sales     | 3     | 4800   | 4710.0000000000000000 |
+| sales     | 1     | 5000   | 4710.0000000000000000 |
+| sales     | 4     | 4800   | 4710.0000000000000000 |
+
+<br/>
+
+`PARTITION BY`는 다중 컬럼도 허용합니다.
+
+```sql
+SELECT depname, empno, salary, sum(salary) OVER (PARTITION BY (depname, empno)) FROM empsalary;
+```
+
+| depname   | empno | salary | sum  |
+| --------- | ----- | ------ | ---- |
+| develop   | 7     | 4200   | 4200 |
+| develop   | 8     | 6000   | 6000 |
+| develop   | 9     | 4500   | 4500 |
+| develop   | 10    | 5200   | 5200 |
+| develop   | 11    | 5200   | 5200 |
+| personnel | 2     | 3900   | 3900 |
+| personnel | 5     | 3500   | 3500 |
+| sales     | 1     | 5000   | 5000 |
+| sales     | 3     | 4800   | 4800 |
+| sales     | 4     | 4800   | 4800 |
+
+<br/>
+
+#### ORDER BY
+
+`ORDER BY`를 사용하여 현재 파티션을 프레임으로 나누어 정렬할 수 있습니다. 함께 기술된 `정렬 조건`에서 최상위에 위치한 프레임부터 윈도우 함수가 적용됩니다.
+
+```sql
+SELECT depname, empno, salary, sum(salary) OVER (ORDER BY depname) FROM empsalary;
+```
+
+| depname   | empno | salary | sum   |
+| --------- | ----- | ------ | ----- |
+| develop   | 11    | 5200   | 25100 |
+| develop   | 7     | 4200   | 25100 |
+| develop   | 9     | 4500   | 25100 |
+| develop   | 8     | 6000   | 25100 |
+| develop   | 10    | 5200   | 25100 |
+| personnel | 5     | 3500   | 32500 |
+| personnel | 2     | 3900   | 32500 |
+| sales     | 3     | 4800   | 47100 |
+| sales     | 1     | 5000   | 47100 |
+| sales     | 4     | 4800   | 47100 |
+
+위의 쿼리는 다음 순서대로 동작합니다.
+
+1. `PARTITION BY`가 선언되지 않았으므로 테이블이 하나의 파티션이 됩니다.
+2. `ORDER BY`가 선언되었으므로 파티션이 `depname`으로 3개의 프레임으로 나뉩니다.
+3. 정렬 요구조건에 따라 `develop`, `personnel`, `sales`에 `sum()`을 적용합니다.
+   프레임 구간 옵션은 기본값(`동일 파티션 내, 프레임 누적`)이 사용됩니다.
+
+<br/>
+
+결과를 의사코드로 재구성해보면 다음과 같습니다.
+
+-   `25100` : sum( `develop` )
+-   `32500` : sum( `develop`, `personnel` )
+-   `47100` : sum( `develop`, `personnel`, `sales` )
