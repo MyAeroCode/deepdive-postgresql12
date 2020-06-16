@@ -825,6 +825,16 @@ HAVING 170 <= avg(height);
 #### 문법
 
 ```sql
+[ WINDOW window_name AS ( window_definition ) [, ...] ]
+```
+
+여러번 재사용되는 윈도우 구간을 정의합니다. 이 절을 이해하기 위해서는 먼저 `윈도우 함수`부터 알아야 합니다.
+
+<br/>
+
+#### 윈도우 함수 문법
+
+```sql
 function_name ([expression [, expression ... ]]) [ FILTER ( WHERE filter_clause ) ] OVER window_name
 function_name ([expression [, expression ... ]]) [ FILTER ( WHERE filter_clause ) ] OVER ( window_definition )
 function_name ( * ) [ FILTER ( WHERE filter_clause ) ] OVER window_name
@@ -870,7 +880,7 @@ EXCLUDE NO OTHERS
 
 #### 집계함수와 차이점
 
-`WINDOW`절은 `GROUP BY`와 유사하지만 다중 행을 단일 행으로 압축하지는 않습니다.
+`윈도우 함수`는 `집계 함수`와 유사하지만 다중 행을 단일 행으로 압축하지는 않습니다.
 
 ![](./images/04-20.png)
 
@@ -1033,3 +1043,179 @@ SELECT depname, empno, salary, sum(salary) OVER (ORDER BY depname) FROM empsalar
 -   `25100` : sum( `develop` )
 -   `32500` : sum( `develop`, `personnel` )
 -   `47100` : sum( `develop`, `personnel`, `sales` )
+
+<br/>
+
+#### 프레임 구간
+
+윈도우 함수에는 `연속적인 1개 이상의 프레임`을 동시에 넘길 수 있습니다. 이 때, 프레임 구간을 설정하려면 `시작점`과 `종료점`이 주어져야 하죠. 이 지점을 넘기는 방식은 `BETWEEN`의 사용여부에 따라 2가지로 나뉩니다.
+
+![](./images/04-22.png)
+
+`BETWEEN`을 함께 사용하려면, 아래의 쿼리처럼 `srt`와 `end`가 함께 주어져야 합니다. 이 경우에는 `[srt, end]`가 프레임 구간이 됩니다.
+
+```sql
+OVER ( ... BETWEEN srt AND end)
+```
+
+<br/>
+
+`BETWEEN`을 사용하지 않으려면 `point`를 하나만 주어도 괜찮습니다. 이 경우에는 `point`가 `CURRENT ROW`보다 작다면 `srt`로 간주되고, 그렇지 않다면 `end`로 간주됩니다. 물론 반대편은 `CURRENT ROW`가 됩니다.
+
+```sql
+OVER ( ... p)
+```
+
+<br/>
+
+포인트는 다음과 같이 주어질 수 있습니다.
+
+-   `UNBOUNDED PRECEDING` : 해당 파티션의 첫 행.
+-   `UNBOUNDED FOLLOWING` : 해당 파티션의 마지막 행.
+-   `n PRECEDING` : 현재 행에서 `n`칸 전의 행 또는 프레임.
+-   `n FOLLOWING` : 현재 행에서 `n`칸 후의 행 또는 프레임.
+-   `CURRENT ROW` : 현재 프레임의 마지막 행 또는 프레임.
+
+<br/>
+
+윈도우 함수는 `프레임`을 기준으로 삼는다고 했는데, 뜬금없이 `행`에 관련된 얘기가 튀어나왔습니다. 이 의문에 대한 대답은 다음 절인 `프레임 구간 모드`에서 자세히 다룹니다.
+
+<br/>
+
+#### 프레임 구간 모드
+
+사실 프레임 구간의 각 지점은 `프레임` 단위 뿐만이 아니라 `행` 단위로도 지정할 수 있습니다. 어떤 단위로 시작점을 정의할 것 인지 `프레임 구간 모드`를 명시적으로 적어서 설정할 수 있습니다.
+
+<br/>
+
+현재 사용할 수 있는 프레임 구간 모드(`mode`)는 다음 3가지가 있습니다.
+
+-   `ROWS` : 행 단위 이동. 프레임 보정 없음.
+-   `RANGE` : 행 단위 이동. 단, 가장 가까운 프레임으로 이동.
+-   `GROUPS` : 프레임 단위 이동.
+
+<br/>
+
+먼저 예제를 생성해보겠습니다.
+
+```sql
+CREATE TABLE numbers (
+    n int
+);
+
+INSERT INTO numbers VALUES
+    (0),
+    (0),
+    (1),
+    (5),
+    (8),
+    (8),
+    (14),
+    (14),
+    (14),
+    (22);
+```
+
+그리고 동일한 숫자끼리 같은 프레임으로 묶은 뒤, 프레임 구간을 조절해가면서 합계를 구해보겠습니다.
+
+```sql
+SELECT n, sum(n) OVER (ORDER BY n ...) FROM numbers;
+```
+
+<br/>
+
+먼저 각 모드들은 `CURRENT ROW`에 대한 개념부터 다릅니다. `ROWS`는 `현재 행`만 가르키지만, `RANGE`는 `현재 프레임의 마지막 행`, `GROUPS`는 `현재 프레임`을 가르킵니다.
+
+![](./images/04-23.png)
+
+<br/>
+
+다음으로 `n PRECEDING/FOLLOWING`의 이동방식이 다릅니다. `ROWS`는 `카운트 행 단위`, `GROUPS`는 `카운트 프레임 단위`로 이동하지만 `RANGE`는 `오프셋 값 단위`로 이동합니다.
+
+<br/>
+
+`RANGE`에 대해 자세히 설명하면 `3 PRECEDING`은 현재 프레임의 값인 8에서 3이전의 값인 5를 찾는다는 뜻입니다. 이 때, 값이 완벽하게 일치하는 것이 없다면, 그것보다 큰 값을 갖는 프레임을 선택합니다.
+
+![](./images/04-24.png)
+
+<br/>
+
+이러한 이유로 `RANGE` 모드에서 `1 PRECEDING`과 `2 PRECEDING`은 현재 프레임을 벗어나지 못합니다.
+
+![](./images/04-25.png)
+
+<br/>
+
+#### Exclude
+
+앞서 정의된 프레임 구간에서, 특정 행이나 프레임을 제외시킬 수 있습니다. 가능한 옵션은 다음과 같습니다.
+
+<br/>
+
+-   `EXCLUDE CURRENT ROW`
+
+현재 행만 제외합니다. `GROUPS` 또는 `RANGE` 모드로 작동하더라도, 그 프레임의 1개 행만 제외합니다. 같은 프레임의 다른 데이터는 살아남습니다.
+
+<br/>
+
+`EXCLUDE GROUP`
+
+현재 프레임의 데이터 전체를 제외합니다. `ROWS` 모드로 작동하더라도 다중 행이 제외될 수 있습니다.
+
+<br/>
+
+`EXCLUDE TIES`
+
+프레임 데이터를 묶어서 1개로만 취급합니다. 프레임에 여러 행이 있더라도 1개 행만 전달됩니다.
+
+<br/>
+
+`EXCLUDE NO OTHERS` (default)
+
+아무것도 제외하지 않습니다.
+
+<br/>
+
+#### Named window
+
+같은 윈도우가 여러번 사용되는 경우, `SELECT`의 부속절인 `WINDOW`절에서 미리 선언할 수 있습니다.
+
+```sql
+SELECT salary, sum(salary) over (my_window)
+FROM empsalary
+WINDOW my_window AS (ORDER BY salary);
+```
+
+<br/>
+
+#### 자주 사용되는 함수
+
+-   `ROW_NUMBER()`
+
+각 파티션의 최상위 행부터 출발하여 1부터 번호를 매깁니다. 등수를 매기는데에도 사용될 수 있습니다.
+
+<br/>
+
+-   `RANK()`
+
+각 파티션의 최상위 행부터 출발하여 1부터 번호를 매깁니다. 중복된 값에는 같은 번호를 매기지만, 각 번호가 연속적이지 않을 수 있습니다.
+
+<br/>
+
+-   `DENSE_RANK()`
+
+각 파티션의 최상위 행부터 출발하여 1부터 번호를 매깁니다. 중복된 값에는 같은 번호를 매기며, `RANK()`와 다르게 연속적으로 번호를 부여합니다.
+
+![](./images/04-26.png)
+
+<br/>
+
+-   `NTILE(n)`
+
+각 파티션에 데이터를 `n`개의 버킷에 최대한 공평하게 분배하고, 버킷의 번호를 반환합니다. 분배 규칙은 다음과 같습니다.
+
+1. `x`개를 `n`으로 나눈 몫과 나머지를 구한다. (`11 / 4 = Q(2) + R(3)`)
+2. 각 버킷에 몫을 더한다. bucket_size = [`2`, `2`, `2`, `2`]
+3. 나머지를 앞선 버킷부터 더한다. bucket_size = [`2+1`, `2+1`, `2+1`, `2`]
+
+![](./images/04-27.png)
