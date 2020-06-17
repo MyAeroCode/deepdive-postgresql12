@@ -1219,3 +1219,95 @@ WINDOW my_window AS (ORDER BY salary);
 3. 나머지를 앞선 버킷부터 더한다. bucket_size = [`2+1`, `2+1`, `2+1`, `2`]
 
 ![](./images/04-27.png)
+
+<br/>
+
+### `UNION`, `INTERSECT`, `EXCEPT` Clause
+
+```sql
+select ...
+{UNION | INTERSECT | EXCEPT} [ALL | EXCEPT]
+select ...
+```
+
+집합 연산자는 `호환 가능한 두 SELECT`의 `합집합`, `교집합`, `차집합`을 계산합니다. 여기서 `호환 가능하다`라는 의미는 다음 조건을 의미합니다.
+
+-   컬럼의 개수가 같다.
+-   각 컬럼의 타입이 같다.
+
+컬럼의 이름은 일치하지 않아도 괜찮습니만, 좌측에서 사용된 컬럼의 이름을 우선적으로 사용합니다. 현재는 `ORDER BY`와 `WITH LOCKING`구문이 없어야만 사용할 수 있습니다.
+
+<br/>
+
+`UNION`은 두 집합의 합집합을 계산합니다. `EXCEPT(default)`가 사용되면 중복된 행을 제거합니다. `ALL`이 사용되면 중복된 행을 제거하지 않습니다.
+
+<br/>
+
+`INTERSECT`는 두 집합의 교집합을 계산합니다. `EXCEPT(default)`가 사용되면 중복된 행을 제거합니다. `ALL`이 사용되면 중복된 행이 `min(좌측중복개수, 우측중복개수)` 만큼 출력됩니다.
+
+<br/>
+
+`EXCEPT`는 왼쪽 집합에서 오른쪽 집합을 뺀 차집합을 계산합니다. `EXCEPT(default)`가 사용되면 중복된 행을 제거합니다. `ALL`이 사용되면 중복된 행이 `min(좌측중복개수 - 우측중복개수, 0)` 만큼 출력됩니다.
+
+<br/>
+
+### `ORDER BY`
+
+```sql
+ORDER BY expression [ ASC | DESC | USING operator ] [ NULLS { FIRST | LAST } ] [, ...]
+```
+
+결과 집합을 주어진 정렬조건을 사용하여 정렬하며, 컬럼은 `컬럼이름` 또는 `좌측에서부터 부여된 서수번호`를 사용하여 지정할 수 있습니다.
+
+```sql
+SELECT val FROM data ORDER BY val;
+SELECT val FROM data ORDER BY 1;
+```
+
+<br/>
+
+컬럼의 이름을 사용하는 경우 `입력 컬럼이름`과 `결과 컬럼이름`을 둘 다 사용할 수 있지만, 둘의 이름이 겹친경우 `출력 컬럼이름`을 우선적으로 사용합니다.
+
+```sql
+CREATE TABLE data (
+    k int,
+    v int
+);
+
+INSERT INTO data VALUES
+    (2, 1),
+    (1, 3),
+    (3, 2);
+
+SELECT
+    k as g,
+    v as k
+FROM data ORDER BY k;
+```
+
+| g   | k   |
+| --- | --- |
+| 2   | 1   |
+| 3   | 2   |
+| 1   | 3   |
+
+<br/>
+
+정렬에 사용된 컬럼이 `SELECT-List`에 포함되지 않아도 됩니다.
+
+```sql
+SELECT k FROM data ORDER BY v;
+```
+
+<br/>
+
+### `OFFSET`, `LIMIT` Clause
+
+```sql
+[OFFSET srt]
+[LIMIT {cnt | ALL}]
+```
+
+결과 집합에서 첫 `srt`개를 무시하고, 다음에 만나는 `cnt`개를 반환합니다. `ALL(default)`인 경우 행의 끝까지 반환합니다.
+
+![](./images/04-28.png)
