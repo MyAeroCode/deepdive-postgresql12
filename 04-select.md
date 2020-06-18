@@ -1312,3 +1312,293 @@ SELECT k FROM data ORDER BY v;
 결과 집합에서 첫 `srt`개를 무시하고, 다음에 만나는 `cnt`개를 반환합니다. `ALL(default)`인 경우 행의 끝까지 반환합니다.
 
 ![](./images/04-28.png)
+
+<br/>
+
+### `Locking` Clause
+
+#### 문법
+
+```sql
+FOR lock_strength [ OF table_name [, ...] ] [ NOWAIT | SKIP LOCKED ]
+```
+
+<br/>
+
+`lock_strength` is one of :
+
+```sql
+UPDATE
+NO KEY UPDATE
+SHARE
+KEY SHARE
+```
+
+<br/>
+
+#### 상세 설명
+
+`OF`절에 명시된 테이블에 `ROW-LEVEL LOCK`을 걸 수 있습니다. 만약 `OF`절이 생략되어 있다면 같은 레벨의 `FROM`절에서 사용된 모든 테이블에 적용됩니다. 이것은 서브쿼리에서 사용된 잠금이 상위쿼리에 영향을 끼치지 않으며, `WITH` 쿼리와 메인 쿼리의 잠금절은 서로 별개로 동작한다는 것을 의미합니다.
+
+<br/>
+
+아래처럼 하나의 테이블에 대해 여러개의 잠금이 정의될 수 있습니다. 하지만 이러한 경우에는 `가장 제약이 강한 것 하나만 적용`됩니다. 아래의 쿼리는 `SHARE`와 `UPDATE`잠금이 동시에 적용되었으므로, 가장 제약이 강한 `UPDATE`만 적용됩니다.
+
+```sql
+SELECT * FROM t
+FOR SHARE  OF t
+FOR UPDATE OF t
+```
+
+<br/>
+
+어떤 행은 다른 트랜잭션에서 이미 잠금이 걸려있을 수 있습니다. 보통은 해당 행의 잠금이 풀릴때까지 대기하지만, 이것을 원치 않는 경우 `NOWAIT`또는 `SKIP LOCKED`를 사용하여 방지할 수 있습니다.
+
+-   `NOWAIT` : 잠금해제를 기다리지 않고, 즉시 에러를 발생시킵니다.
+-   `SKIP LOCKED` : 잠금이 걸린 행만 무시하고 진행합니다.
+
+<br/>
+
+`LIMIT`과 `OFFSET`이 같이 사용된 경우, `LIMIT` 이후의 행에는 잠금이 걸리지 않습니다. 하지만 `OFFSET` 이전의 행에는 잠금이 걸림에 주의해야 합니다. 마찬가지로 `CURSOR-QUERY`에 사용된 경우, 아직 가져오지 않은 행에만 락이 적용되지 않습니다.
+
+<br/>
+
+내부 쿼리에서 광범위하게 락을 적용했더라도, 외부 쿼리에서 `WHERE`절로 행을 제한하면, 필터링된 행에는 락이 적용되지 않습니다. 즉, 내부 쿼리에 조건이 명시적으로 사용되지 않았더라도, 외부 쿼리의 조건에 의해 잠금범위가 축소될 수 있습니다. 예를 들어, 아래의 쿼리에서 `n=5`를 만족하는 행에만 잠금이 적용되며, 나머지 행에는 락이 적용되지 않습니다.
+
+```sql
+SELECT * FROM (SELECT * FROM mytable FOR UPDATE) ss WHERE n = 5;
+```
+
+<br/>
+
+#### 롤백 시 주의점
+
+`9.3` 이상의 버전은 `ROLLBACK TO`를 사용하면 잠금을 유지할 수 없습니다. 예를 들어, 아래의 쿼리는 `mytable`에 걸린 `FOR UPDATE` 잠금이 해제됩니다.
+
+```sql
+BEGIN;
+SELECT * FROM mytable WHERE key = 1 FOR UPDATE;
+SAVEPOINT s;
+UPDATE mytable SET ... WHERE key = 1;
+ROLLBACK TO s;
+```
+
+<br/>
+
+#### 로우 레벨 락
+
+각 행은 갱신, 삭제, 조회를 방지하기 위한 락이 설정될 수 있습니다. 여러개의 잠금이 동시에 설정될 수 있지만 `충돌하지 않는 락`으로만 구성되어야 합니다. 행 잠금의 종류는 다음과 같으며, 위에 있을수록 더 강력한 잠금입니다.
+
+-   `UPDATE`
+-   `NO KEY UPDATE`
+-   `SHARE`
+-   `KEY SHARE`
+
+<br/>
+
+`UPDATE`
+
+갱신 또는 삭제를 위한 배타적 잠금입니다. 배타적 잠금은 타 트랜잭션의 아래의 구문을 블럭합니다.
+
+-   `UPDATE`
+-   `DELETE`
+-   `SELECT FOR UPDATE`
+-   `SELECT FOR NO KEY UPDATE`
+-   `SELECT FOR SHARE`
+-   `SELECT FOR KEY SHARE`
+
+<br/>
+
+`NO KEY UPDATE`
+
+기본적으로는 `FOR UPDATE`와 동일하지만 조금 더 약합니다. `SELECT FOR KEY SHARE`를 블럭하지 않습니다. 이 잠금은 `FOR UPDATE`를 사용하지 않은 `UPDATE`구문에 의해서도 획득됩니다. 즉, 타 트랜잭션의 아래의 구문을 블럭합니다.
+
+-   `UPDATE`
+-   `DELETE`
+-   `SELECT FOR UPDATE`
+-   `SELECT FOR NO KEY UPDATE`
+-   `SELECT FOR SHARE`
+
+<br/>
+
+`SHARE`
+
+기본적으로는 `NO KEY UPDATE`와 동일하지만 조금 더 약합니다. 다만, 위에서 소개된 잠금이 `배타적 잠금`을 걸었다면 이하의 잠금은 `공유적 잠금`을 겁니다. 공유적 잠금은 타 트랜잭션의 아래의 구문을 블럭합니다.
+
+-   `UPDATE`
+-   `DELETE`
+-   `SELECT FOR UPDATE`
+-   `SELECT FOR NO KEY UPDATE`
+
+<br/>
+
+`SELECT FOR KEY SHARE`
+
+기본적으로는 `FOR SHARE`와 동일하지만 조금 더 약합니다. `SELECT FOR SHARE`를 블럭하지 않습니다. 즉, 타 트랜잭션의 아래의 구문을 블럭합니다.
+
+-   `UPDATE`
+-   `DELETE`
+-   `SELECT FOR UPDATE`
+
+<br/>
+
+위의 내용을 표로 정리하면 다음과 같습니다.
+
+![](./images/04-29.jpg)
+
+※ 모든 락은 `UPDATE`와 `DELETE`를 블럭합니다.
+
+<br/>
+
+#### 잠금과 디스크 쓰기
+
+`PostgreSQL`에서 행이 잠김다는 것은 행에 `잠금 비트`가 쓰여진다는 것을 의미합니다. 즉, 행을 잠그면 `디스크 쓰기`가 발생합니다.
+
+<br/>
+
+### `TABLE` 명령어
+
+다음 두 개의 쿼리는 서로 같습니다.
+
+```sql
+TABLE table_name;
+
+SELECT * FROM table_name;
+```
+
+하지만 다음 하위절만 지원합니다.
+
+-   `WITH`
+-   `UNION` / `INTERSECT` / `EXCEPT`
+-   `ORDER BY`
+-   `LIMIT` / `OFFSET`
+-   `FOR LOCKING`
+
+<br/>
+
+따라서 아래의 하위절은 지원하지 않습니다.
+
+-   `WHERE`
+-   `GROUP BY` / `HAVING` (`AGGREGATION`)
+
+<br/>
+
+### 표준 호환성 비교
+
+<br/>
+
+#### `FROM`절 생략
+
+일부 데이터베이스는 더미 테이블을 사용해야 하지만, `PostgreSQL`은 아예 `FROM`절을 사용하지 않습니다.
+
+```sql
+SELECT 2+2;
+
+ ?column?
+----------
+    4
+```
+
+그러나 `FROM`절 없이 테이블 컬럼에 접근할 수 없습니다.
+
+```sql
+SELECT distributors.* WHERE distributors.name = 'Westward';
+```
+
+<br/>
+
+#### 빈 `SELECT-List`
+
+`비어있는 결과집합`을 표현하기 위해 `SELECT-LIST`를 비워둘 수 있습니다. 즉, 아래의 쿼리는 공집합을 표현합니다.
+
+```sql
+SELECT FROM t;
+```
+
+여기서도 `FROM`절은 생략할 수 있습니다.
+
+```sql
+SELECT
+```
+
+<br/>
+
+#### `AS` 생략
+
+별칭을 표현하는 `AS`는 생략될 수 있습니다.
+
+```sql
+SELECT t.col1 x
+FROM   mytable t
+```
+
+<br/>
+
+#### `ONLY`와 상속
+
+`SQL Standard`는 `ONLY`를 사용할 경우 소괄호를 함께 사용해야 합니다.
+
+```sql
+SELECT * FROM ONLY (tab1), ONLY (tab2) WHERE ...
+```
+
+`PostgreSQL`은 소괄호 생략 스타일도 지원합니다.
+
+```sql
+SELECT * FROM ONLY tab1, ONLY tab2 WHERE ...
+```
+
+<br/>
+
+#### `TABLESPACE`절 제약
+
+표준에 의하면 모든 `FROM`절에서 이 기능을 지원해야 하지만, `PostgreSQL`은 `regular tables` 또는 `materialized view`에만 적용할 수 있습니다.
+
+<br/>
+
+#### `FROM`절에서 함수호출
+
+표준에 의하면 `FROM`절에서 함수호출을 하기 위해서는 서브쿼리로 감쌀 필요가 있습니다. 즉, `PostgreSQL`에서 아래의 쿼리는 서로 같습니다.
+
+```sql
+FROM func(...) alias
+FROM LATERAL (SELECT func(...)) alias
+```
+
+이전에 설명했듯이 `FROM` 절에서 함수호출이 이루어지면, `LATERAL` 키워드는 생략하든, 생략하지 않든 강제적으로 적용됩니다.
+
+> `LATERAL`은 함수호출의 앞에 사용할 수 있지만, 이 경우에는 `Noise Word`입니다. 있으나 없으나 `LATERAL`로 간주되기 때문입니다.
+
+<br/>
+
+#### `GROUP BY`, `ORDER BY`에서의 이름해석
+
+표준에 의하면 `GROUP BY`와 `ORDER BY`에서 사용될 수 있는 것은 `컬럼`과 `서수`뿐입니다. 하지만 `PostgreSQL`은 이것을 더욱 확장하여 `표현식`도 사용할 수 있습니다. 단, 표현식에서 사용되는 컬럼은 `입력컬럼이름`을 우선적으로 사용한다는 것을 기어갷야 합니다.
+
+<br/>
+
+#### `LIMIT`, `OFFSET`
+
+표준은 `OFFSET / FETCH` 이지만, `PostgreSQL`은 `LIMIT / OFFSET`구문도 지원합니다. 이러한 스타일은 `IBM DB2`에서도 사용되고 있습니다.
+
+<br/>
+
+#### `LOCKING` Clause
+
+표준에서 `FOR ...` 구문은 `CURSOR-QUERY`에서만 사용할 수 있지만, `PostgreSQL`은 `SUB-QUERY`와 `WITH-QUERY`를 비롯한 모든 쿼리에서 사용할 수 있습니다. 또한 `NOWAIT`와 `SKIP LOCKED`옵션은 표준이 아닙니다.
+
+<br/>
+
+#### `WITH` 쿼리에서 데이터 삽입/삭제
+
+`PostgreSQL`은 `WITH-QUERY`에서 `INSERT`, `UPDATE`, `DELETE`를 사용할 수 있습니다. 그러나 표준에서는 이러한 조항이 명시되어 있지 않습니다.
+
+<br/>
+
+#### 표준 확장
+
+다음 구문은 표준을 확장한 것 입니다.
+
+-   `DISTINCT ON ( ... )`
+-   `ROWS FROM( ... )`
+-   `WITH`에서 `MATERIALIZED`, `NOT MATERIALIZED` 옵션
