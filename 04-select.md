@@ -1257,11 +1257,12 @@ select ...
 ORDER BY expression [ ASC | DESC | USING operator ] [ NULLS { FIRST | LAST } ] [, ...]
 ```
 
-결과 집합을 주어진 정렬조건을 사용하여 정렬하며, 컬럼은 `컬럼이름` 또는 `좌측에서부터 부여된 서수번호`를 사용하여 지정할 수 있습니다.
+결과 집합을 주어진 정렬조건을 사용하여 정렬하며, 표현식에 `컬럼` 또는 `계산식`을 사용할 수 있습니다. 컬럼에는 `컬럼이름` 또는 `좌측에서부터 부여된 서수번호`를 사용하여 지정할 수 있습니다.
 
 ```sql
 SELECT val FROM data ORDER BY val;
 SELECT val FROM data ORDER BY 1;
+SELECT val FROM data ORDER BY val * val;
 ```
 
 <br/>
