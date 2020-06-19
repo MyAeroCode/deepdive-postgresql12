@@ -14,3 +14,4 @@
 |    3    | `Create Index`, `Alter Index`, `Drop Index` |
 |  `DML`  |                                             |
 |    4    | `Select`                                    |
+|    5    | `Insert`                                    |
