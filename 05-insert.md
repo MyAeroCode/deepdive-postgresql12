@@ -338,3 +338,243 @@ SELECT * FROM table1
 ```
 
 위의 쿼리는 `table1`에서 사용된 `SERIAL` 컬럼의 값을 무시하고 `table2`와 연관된 시퀀스에서 새로운 값을 추출하여 덮어씁니다.
+
+<br/>
+
+### `RETURNING` Clause
+
+#### 기본 구문
+
+```sql
+   [ RETURNING * | output_expression [ [ AS ] output_name ] [, ...] ]
+```
+
+`RETURNING` 절은 성공적으로 `삽입` 또는 `갱신 (DO UPDATE SET)`이 이루어진 행의 결과 중, `전체 컬럼` 또는 `일부 컬럼` 또는 `표현식 결과`를 반환합니다.
+
+<br/>
+
+단, `SELECT-FROM`에는 `INSERT`, `UPDATE`, `DELETE` 문장을 사용할 수 없으므로 `SELECT-WITH`에 해당 내용을 적어야 합니다.
+
+<br/>
+
+#### 예제
+
+아래의 쿼리에서 `RETURNING`절을 수정하면서 결과를 살펴보겠습니다.
+
+```sql
+CREATE TABLE Point3D (
+    x int,
+    y int,
+    z int,
+    CONSTRAINT point3d_pk PRIMARY KEY(x, y)
+);
+
+-- 첫 번째 삽입
+INSERT INTO Point3D VALUES
+    (0, 0, 0),
+    (1, 1, 0),
+    (2, 2, 0);
+
+-- 두 번째 삽입
+WITH RES AS (
+    INSERT INTO Point3D VALUES
+        (0, 0, 5),
+        (1, 1, 5),
+        (2, 2, 5)
+    ON CONFLICT (x, y) DO UPDATE SET (x, y, z) = (excluded.x, excluded.y, excluded.z) WHERE Point3D.x % 2 = 0
+    --        v
+    RETURNING *
+)
+SELECT * FROM RES;
+```
+
+<br/>
+
+`RETURNING *`은 변경된 행의 전체 컬럼을 반환합니다.
+
+```sql
+RETURNING *
+```
+
+| x   | y   | z   |
+| --- | --- | --- |
+| 0   | 0   | 5   |
+| 2   | 2   | 5   |
+
+<br/>
+
+`RETURNING {column | expr} (AS alias), [...]`은 변경된 행의 일부 컬럼 또는 간단한 표현식의 결과를 반환합니다. 어떤 컬럼에는 별명을 부여할 수 있습니다.
+
+```sql
+RETURNING x, z
+```
+
+| x   | z   |
+| --- | --- |
+| 0   | 5   |
+| 2   | 5   |
+
+```sql
+RETURNING x, z AS k
+```
+
+| x   | k   |
+| --- | --- |
+| 0   | 5   |
+| 2   | 5   |
+
+```sql
+RETURNING x, z AS k, 1+1 AS t
+```
+
+| x   | k   | t   |
+| --- | --- | --- |
+| 0   | 5   | 2   |
+| 2   | 5   | 2   |
+
+<br/>
+
+#### 공집합 반환
+
+삽입되거나 갱신된 행이 없다면 `RETURNING` 절은 공집합을 반환합니다. 이것을 사용하여 삽입되거나 갱신된 행의 개수와 유무를 알 수 있습니다.
+
+```sql
+CREATE TABLE Point3D (
+    x int,
+    y int,
+    z int,
+    CONSTRAINT point3d_pk PRIMARY KEY(x, y)
+);
+
+-- 첫 번째 삽입
+INSERT INTO Point3D VALUES
+    (0, 0, 0);
+
+-- 두 번째 삽입
+WITH RES AS (
+    INSERT INTO Point3D VALUES
+        (0, 0, 1),
+        (0, 0, 2),
+        (0, 0, 3),
+        (0, 0, 4),
+        (0, 0, 5)
+    ON CONFLICT DO NOTHING
+    RETURNING 1
+)
+...
+```
+
+<br/>
+
+```sql
+SELECT COUNT(*) AS affected FROM RES;
+```
+
+| affected |
+| :------: |
+|    0     |
+
+<br/>
+
+```sql
+SELECT EXISTS (SELECT * FROM RES) AS affected;
+```
+
+| affected |
+| :------: |
+|  false   |
+
+<br/>
+
+`COUNT(*)`는 집계함수이므로 간단한 표현식에 포함되지 않기 때문에, 아래처럼 변경된 행의 개수를 가져올 수 없습니다.
+
+```sql
+-- 두 번째 삽입
+WITH RES AS (
+    INSERT INTO Point3D VALUES
+        (0, 0, 1),
+        (0, 0, 2),
+        (0, 0, 3),
+        (0, 0, 4),
+        (0, 0, 5)
+    ON CONFLICT DO NOTHING
+    RETURNING count(*)
+)
+SELECT * FROM RES;
+```
+
+<br/>
+
+#### `WITH` 주의점
+
+`SELECT`문장의 동작순서에서 `WITH`절은 최우선으로 처리됩니다. 하지만 `WITH` 절에 부작용이 존재하는 쿼리를 작성했더라도, 해당 부작용은 검출되지 않습니다. 다음 쿼리를 생각해보겠습니다.
+
+```sql
+CREATE TABLE Point3D (
+    x int,
+    y int,
+    z int,
+    CONSTRAINT point3d_pk PRIMARY KEY(x, y)
+);
+
+-- 첫 번째 삽입
+INSERT INTO Point3D VALUES
+    (0, 0, 0);
+
+-- 두 번째 삽입
+WITH RES AS (
+    INSERT INTO Point3D VALUES
+        (1, 1, 1),
+        (2, 2, 2)
+    ON CONFLICT DO NOTHING
+    RETURNING *
+)
+SELECT * FROM Point3D;
+```
+
+<br/>
+
+`SELECT`는 `WITH`를 최우선으로 처리하므로 `(1, 1, 1)`, `(2, 2, 2)`가 `Point3D`테이블에 정상적으로 삽입되었지만, 메인 쿼리는 부작용 이전의 결과를 반환합니다.
+
+**Point3D :**
+
+| x   | y   | z   |
+| --- | --- | --- |
+| 0   | 0   | 0   |
+
+<br/>
+
+`RES`가 사용되지 않아 `INSERT`자체가 일어나지 않았다고 착각할 수 있겠지만, 다시 `Point3D`를 쿼리하면 `INSERT`는 성공적으로 동작했음을 알 수 있습니다.
+
+**Point3D :**
+
+| x   | y   | z   |
+| --- | --- | --- |
+| 0   | 0   | 0   |
+| 1   | 1   | 1   |
+| 2   | 2   | 2   |
+
+<br/>
+
+메인 쿼리에서 부작용을 포함한 결과를 가져와야 한다면, `부작용 이전의 결과`에 `RETURNING으로 가져온 부작용`을 더해야 합니다.
+
+```sql
+WITH RES AS (
+    INSERT INTO Point3D VALUES
+        (1, 1, 1),
+        (2, 2, 2)
+    ON CONFLICT DO NOTHING
+    RETURNING *
+)
+SELECT * FROM Point3D -- 부작용 이전의 결과
+UNION ALL
+SELECT * FROM RES; -- 부작용
+```
+
+**Point3D + RES :**
+
+| x   | y   | z   |
+| --- | --- | --- |
+| 0   | 0   | 0   |
+| 1   | 1   | 1   |
+| 2   | 2   | 2   |
