@@ -15,3 +15,4 @@
 |  `DML`  |                                             |
 |    4    | `Select`                                    |
 |    5    | `Insert`                                    |
+|    6    | `Update`                                    |
