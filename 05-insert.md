@@ -137,6 +137,8 @@ and `conflict_action` is one of:
 
 <br/>
 
+#### `DO NOTHING`
+
 먼저 `DO NOTHING`은 충돌을 유발시킨 신규 행을 무시하고 넘어갑니다. 먼저 쿼리를 생각해보겠습니다.
 
 ```sql
@@ -144,26 +146,29 @@ CREATE TABLE Point3D (
     x int,
     y int,
     z int,
-    CONSTRAINT point3d_pk PRIMARY KEY(x, y, z)
+    CONSTRAINT point3d_pk PRIMARY KEY(x, y)
 );
 
 INSERT INTO Point3D VALUES
-    (1, 1, 1),
-    (1, 1, 1)
-ON CONFLICT (x, y, z) DO NOTHING;
+    (0, 0, 0),
+    (0, 0, 1),
+    (0, 0, 2)
+ON CONFLICT (x, y) DO NOTHING;
 ```
 
-위의 쿼리는 `(1, 1, 1)`이 중복으로 삽입되어 충돌이 발생하므로, 아무것도 삽입되지 말아야 할 것처럼 보이지만, `DEFERRABLE`옵션의 기본값인 `NOT DEFERRABLE`는 각 행이 삽입될 때 마다 위반을 검사하므로, 첫번째 행이 삽입된 시점에서는 위반제약이 발생하지 않습니다.
+`Point3D`는 xy평면에서 중복된 점을 허용하지 않기 때문에, `(x=0, y=0)`이 연속으로 삽입되어 충돌이 발생하므로, 위의 쿼리는 아무것도 삽입되지 말아야 할 것처럼 보이지만, `DEFERRABLE`옵션의 기본값인 `NOT DEFERRABLE`는 각 행이 삽입될 때 마다 위반을 검사하므로, 첫번째 행이 삽입된 시점에서는 위반제약이 발생하지 않습니다.
 
 <br/>
 
-즉, 첫번째 `(1, 1, 1)`은 남아있게됩니다.
+즉, 맨 처음에 삽입된 `(0, 0, 0)`은 남아있게됩니다.
 
 | x   | y   | z   |
 | --- | --- | --- |
-| 1   | 1   | 1   |
+| 0   | 0   | 0   |
 
 <br/>
+
+#### `DO UPDATE SET`
 
 반면에 `DO UPDATE SET`은 충돌을 발생시킨 `신규 행`을 사용하여 `기존 행`을 갱신합니다. 아래의 쿼리를 생각해보겠습니다.
 
@@ -172,34 +177,41 @@ CREATE TABLE Point3D (
     x int,
     y int,
     z int,
-    CONSTRAINT point3d_pk PRIMARY KEY(x, y, z)
+    CONSTRAINT point3d_pk PRIMARY KEY(x, y)
 );
 
 -- 첫 번째 삽입
 INSERT INTO Point3D VALUES
-    (1, 1, 1),
-    (2, 2, 2)
+    (0, 0, 0),
+    (1, 1, 1);
 
 -- 두 번째 삽입
 INSERT INTO Point3D VALUES
-    (1, 1, 1),
-    (2, 2, 2,),
-    (3, 3, 3)
-ON CONFLICT (x, y, z) DO UPDATE SET (x, y, z) = (excluded.x, excluded.y, excluded.z);
+    (0, 0, 5),
+    (1, 1, 5),
+    (2, 2, 5)
+ON CONFLICT (x, y) DO UPDATE SET (x, y, z) = (excluded.x, excluded.y, excluded.z);
 ```
 
-두 번째 삽입에서 `1,1,1`, `2,2,2`가 중복 삽입되어 충돌이 발생했지만, `DO UPDATE SET` 구문으로 인해 `삽입`이 아닌 `갱신`이 발생합니다. 이 때, 충돌을 발생시킨 행은 `excluded` 테이블로 전달되는데,
+두 번째 삽입에서 `(x=0, y=0)`, `(x=1, y=1)`이 중복 삽입되어 충돌이 발생했지만, `DO UPDATE SET` 구문으로 인해 `삽입`이 아닌 `갱신`이 이루어집니다. 이 때, 충돌을 발생시킨 행은 `excluded` 테이블로 전달되는데,
 
--   `1,1,1`의 충돌을 발생시킨 행은 두 번째 삽입의 `1,1,1`이고,
--   `2,2,2`의 충돌을 발생시킨 행은 두 번째 삽입의 `2,2,2`이므로,
+-   `(x=0, y=0)`의 충돌을 발생시킨 행은 `0,0,5`이고,
+-   `(x=1, y=1)`의 충돌을 발생시킨 행은 `1,1,5`이므로,
 
-`1,1,1`과 `2,2,2`를 삽입할 때의 `excluded`는 서로 다름을 알 수 있습니다. `3,3,3`은 충돌하지 않았으므로 정상적으로 삽입됩니다.
+`(x=0, y=0)`와 `(x=1, y=1)`를 삽입할 때의 `excluded`는 서로 다름을 알 수 있습니다. 다만, `(x=2, y=2)`은 충돌하지 않았으므로 정상적으로 삽입됩니다.
 
-| x   | y   | z   |
+**첫 번째 삽입:**
+| x | y | z |
 | --- | --- | --- |
-| 1   | 1   | 1   |
-| 2   | 2   | 2   |
-| 3   | 3   | 3   |
+| 0 | 0 | 0 |
+| 1 | 1 | 1 |
+
+**두 번째 삽입:**
+| x | y | z |
+| --- | --- | --- |
+| 0 | 0 | 5 |
+| 1 | 1 | 5 |
+| 2 | 2 | 5 |
 
 <br/>
 
@@ -210,38 +222,76 @@ CREATE TABLE Point3D (
     x int,
     y int,
     z int,
-    CONSTRAINT point3d_pk PRIMARY KEY(x, y, z)
+    CONSTRAINT point3d_pk PRIMARY KEY(x, y)
 );
 
 -- 첫 번째 삽입
 INSERT INTO Point3D VALUES
-    (1, 1, 1);
+    (0, 0, 0);
 
 -- 두 번째 삽입
 INSERT INTO Point3D VALUES
-    (1, 1, 1),
-    (1, 1, 1)
-ON CONFLICT (x, y, z) DO UPDATE SET (x, y, z) = (excluded.x, excluded.y, excluded.z);
+    (0, 0, 1),
+    (0, 0, 2)
+ON CONFLICT (x, y) DO UPDATE SET (x, y, z) = (excluded.x, excluded.y, excluded.z);
 ```
 
 ```
 Schema Error: error: ON CONFLICT DO UPDATE command cannot affect row a second time
 ```
 
-`1,1,1`에 대해 충돌을 발생시킨 행이 여러개이기 때문에, 무엇을 사용해여 갱신해야 하는지 모호하기 때문입니다. 이 경우에는 `excluded`가 다음과 같은 상황입니다.
+`(x=0, y=0)`에 대해 충돌을 발생시킨 행이 여러개이기 때문에, 무엇을 사용해여 갱신해야 하는지 모호하기 때문입니다. 이 경우에는 `excluded`가 다음과 같은 상황입니다.
+
+**excluded of (x=0, y=0):**
 
 | x   | y   | z   |
 | --- | --- | --- |
 | 1   | 1   | 1   |
 | 1   | 1   | 1   |
 
-즉, `excluded`는 단일 행 테이블 제약을 가지고 있는것으로 볼 수 있습니다.
+즉, `excluded`는 단일 행 제약을 가지고 있는것으로 볼 수 있습니다.
+
+<br/>
+
+`DO UPDATE SET ... WHERE`를 사용하면 특정 조건을 만족하는 행에 대해서만 `DO UPDATE SET`으로 작동하도록 지정할 수 있습니다. 조건을 만족하지 않는 행은 `DO NOTHING`으로 작동됩니다.
+
+```sql
+CREATE TABLE Point3D (
+    x int,
+    y int,
+    z int,
+    CONSTRAINT point3d_pk PRIMARY KEY(x, y)
+);
+
+-- 첫 번째 삽입
+INSERT INTO Point3D VALUES
+    (0, 0, 0),
+    (1, 1, 0),
+    (2, 2, );
+
+-- 두 번째 삽입
+INSERT INTO Point3D VALUES
+    (0, 0, 5),
+    (1, 1, 5),
+    (2, 2, 5)
+ON CONFLICT (x, y) DO UPDATE SET (x, y, z) = (excluded.x, excluded.y, excluded.z) WHERE point3d.x=1;
+```
+
+위의 쿼리는 `(x=1)`인 행에 대해서만 `DO UPDATE SET`으로 작동하고, 그 외에는 `DO NOTHING`으로 작동하므로, 최종 결과는 다음과 같습니다.
+
+**두 번째 삽입 :**
+
+| x   | y   | z   |
+| --- | --- | --- |
+| 0   | 0   | 0   |
+| 1   | 1   | 5   |
+| 2   | 2   | 0   |
 
 <br/>
 
 #### 표현식 기반 충돌검사
 
-유니크 인덱스에서 사용된 `표현식`도 가능합니다. 아래의 예제는 `각 요소의 합`이 중복된 다른 행이 있을 때, 유니크 제약 위반이 발생합니다.
+유니크 인덱스에서 사용된 `표현식`도 사용할 수 있습니다. 아래의 예제는 `각 요소의 합`이 중복된 다른 행이 있을 때, 유니크 제약 위반이 발생합니다.
 
 ```sql
 CREATE TABLE Point3D (
@@ -257,9 +307,15 @@ INSERT INTO Point3D VALUES
 ON CONFLICT ((x+y+z)) DO NOTHING;
 ```
 
+**삽입 결과 :**
+
+| x   | y   | z   |
+| --- | --- | --- |
+| 3   | 2   | 1   |
+
 <br/>
 
-#### `OVERRIDING` Clause
+### `OVERRIDING` Clause
 
 `OVERRIDING`절은 `GENERATED ALWAYS`, `SEQUENCE`, `SERIAL`에 관련된 제약을 지정합니다.
 
