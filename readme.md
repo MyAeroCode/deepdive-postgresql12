@@ -16,3 +16,4 @@
 |    4    | `Select`                                    |
 |    5    | `Insert`                                    |
 |    6    | `Update`                                    |
+|    7    | `Delete`, `Truncate`                        |
