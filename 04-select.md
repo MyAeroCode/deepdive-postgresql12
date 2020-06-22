@@ -290,7 +290,7 @@ FROM   unnest(array['x', 'y', 'z']) WITH ORDINALITY AS test(token, seq);
 
 <br/>
 
-기본적으로 `FROM`에서 `Right-Hand Element`는 `Left-Hand Element`의 데이터를 읽을 수 없습니다. 그러나 `SUB-SELECT` 또는 `FUNCTION-CALL`의 앞에 `LATERAL` 키워드를 함께 사용하면, 해당 요소의 좌측에서 선언된 데이터를 읽을 수 있습니다.
+기본적으로 `FROM`에서 `Right-Hand Element`는 `Left-Hand Element`의 데이터를 읽을 수 없습니다. 그러나 `SUB-SELECT` 또는 `FUNCTION-CALL`의 앞에 `LATERAL` 키워드를 함께 사용하면, 좌측 데이터를 읽을 수 있습니다.
 
 ```sql
 -- 샘플 데이터 테이블
@@ -321,7 +321,7 @@ FROM   test, LATERAL ( SELECT x + y ) as sub("x+y");
 
 ![](./images/04-06.png)
 
-이것을 `JOIN`과 함께 사용하면 `상호 연관 서브쿼리`와 결과가 같아집니다. 예를 들어, 각 `x`마다 그룹을 지어 `y`가 평균보다 큰 행만 출력하는 작업을 `상호 연관 서브쿼리`로 작성해보면 다음과 같습니다.
+이것을 `JOIN`과 함께 사용하면 `상호 연관 서브쿼리`와 결과가 같아집니다. 예를 들기위해, 먼저 각 `x`마다 `y`가 평균보다 큰 행만 출력하는 작업을 `상호 연관 서브쿼리`로 작성하면 다음과 같습니다.
 
 ```sql
 SELECT *
@@ -476,10 +476,10 @@ SELECT 'Hello, Hello!' SIMILAR TO '(Hello(,|!) ){2}'; -- true
 
 **POSIX 정규 표현식 :**
 
--   `str ~ pattern` : 대소문자를 `엄격히` 비교하여 `str`이 `pattern`에 일치하면 `true`.
--   `str ~* pattern`: 대소문자를 `느슨하게` 비교하여 `str`이 `pattern`에 일치하면 `true`.
--   `str !~ pattern` : 대소문자를 `엄격히` 비교하여 `str`이 `pattern`에 일치하지 않으면 `true`.
--   `str !~* pattern` : 대소문자를 `느슨하게` 비교하여 `str`이 `pattern`에 일치하지 않으면 `true`.
+-   `str ~ pattern` : 대소문자를 `구분하고` 비교하여 `str`이 `pattern`에 일치하면 `true`.
+-   `str ~* pattern`: 대소문자를 `구분하지 않고` 비교하여 `str`이 `pattern`에 일치하면 `true`.
+-   `str !~ pattern` : 대소문자를 `구분하고` 비교하여 `str`이 `pattern`에 일치하지 않으면 `true`.
+-   `str !~* pattern` : 대소문자를 `구분하지 않고` 비교하여 `str`이 `pattern`에 일치하지 않으면 `true`.
 
 ```sql
 SELECT 'Hello, World!' ~ '^H.*!$'; -- true;
@@ -522,7 +522,7 @@ GROUP BY grouping_element [, ...]
 
 ![](./images/04-11.png)
 
-\*\* `GROUP BY`절이 적용되었다면 결과행은 개수는 `그룹의 개수`보다 커질 수 없습니다.
+\*\* 결과행은 개수는 `그룹의 개수`보다 커질 수 없습니다.
 
 **테스트 데이터 :**
 
@@ -574,7 +574,7 @@ FROM   students
 GROUP BY (g, c);
 ```
 
-이번에는 일부러 `class`의 이름만 `grade`로 바꿔보았습니다. 다음 쿼리는 에러가 발생할 것 같지만 `입력 컬럼이름을 우선적으로 사용한다`는 규칙에 의해 정상적으로 실행됩니다.
+이번에는 일부러 `class`의 이름만 `grade`로 바꿔보았습니다. `grade`라는 이름이 겹치기 때문에, 아래의 쿼리는 에러가 발생할 것 같지만 `입력 컬럼이름을 우선적으로 사용한다`는 규칙에 의해 정상적으로 실행됩니다.
 
 ```sql
 SELECT grade, class as "grade", avg(height) as "avg_height"
@@ -644,7 +644,7 @@ GROUP BY GROUPING SETS ((grade), (class), ());
 
 ![](./images/04-13.png)
 
-비어있는 컬럼집합을 통해 알 수 있듯이, `다차원 분석`에 넘겨진 그룹의 컬럼이 일치하지 않아도 괜찮습니다.
+비어있는 컬럼집합을 통해 알 수 있듯이, `다차원 분석`에 넘겨진 그룹들의 컬럼개수가 서로 동일하지 않아도 괜찮습니다.
 
 ```sql
 SELECT grade, class, sex, avg(height) as "avg_height"
@@ -683,7 +683,7 @@ GROUP BY ROLLUP((grade), (class), (sex));
 
 ![](./images/04-15.png)
 
-당연하지만, 이번에도 각각의 표현식에 사용된 컬럼의 개수는 일치하지 않아도 괜찮습니다. 이번에는 `((grade, class), (sex))`부터 시작하여 `((grade, class))`, `()`까지 집계함수를 실행합니다.
+당연하지만, 이번에도 각각의 그룹의 컬럼개수는 일치하지 않아도 괜찮습니다. 이번에는 `((grade, class), (sex))`부터 시작하여 `((grade, class))`, `()`까지 집계함수를 실행합니다.
 
 ```sql
 SELECT grade, class, sex, avg(height) as "avg_height"
@@ -714,7 +714,7 @@ GROUPING SETS (
 )
 ```
 
-마찬가지로, 각각의 표현식에 사용된 컬럼의 개수가 동일하지 않아도 괜찮습니다. 아래의 쿼리는 다음 조합을 생성하여 집계함수에 넘깁니다.
+마찬가지로, 각각의 그룹의 컬럼개수가 동일하지 않아도 괜찮습니다. 아래의 쿼리는 다음 조합을 생성하여 집계함수에 넘깁니다.
 
 -   `((grade, class), (sex))`
 -   `((grade, class))`
@@ -884,7 +884,7 @@ EXCLUDE NO OTHERS
 
 ![](./images/04-20.png)
 
-하지만 윈도우 함수와 집계 함수는 거의 동일하기 때문에, `OVER ...`구문을 사용해야 윈도우 함수로 동작합니다. `OVER...`구문이 사용되지 않은 경우에는 집계 함수로 동작합니다.
+하지만 윈도우 함수와 집계 함수는 거의 동일하기 때문에, `OVER`구문을 사용해야 윈도우 함수로 동작합니다. `OVER`구문이 사용되지 않은 경우에는 집계 함수로 동작합니다.
 
 ```sql
 -- sum은 집계 함수
@@ -1573,7 +1573,7 @@ FROM LATERAL (SELECT func(...)) alias
 
 #### `GROUP BY`, `ORDER BY`에서의 이름해석
 
-표준에 의하면 `GROUP BY`와 `ORDER BY`에서 사용될 수 있는 것은 `컬럼`과 `서수`뿐입니다. 하지만 `PostgreSQL`은 이것을 더욱 확장하여 `표현식`도 사용할 수 있습니다. 단, 표현식에서 사용되는 컬럼은 `입력컬럼이름`을 우선적으로 사용한다는 것을 기어갷야 합니다.
+표준에 의하면 `GROUP BY`와 `ORDER BY`에서 사용될 수 있는 것은 `컬럼`과 `서수`뿐입니다. 하지만 `PostgreSQL`은 이것을 더욱 확장하여 `표현식`도 사용할 수 있습니다. 단, 표현식에서 사용되는 컬럼은 `입력컬럼이름`을 우선적으로 사용한다는 것을 기억해야 합니다.
 
 <br/>
 
