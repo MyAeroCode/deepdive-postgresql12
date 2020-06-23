@@ -212,14 +212,14 @@ lower:upper:[between [, ...]]
 
 <br/>
 
-상황에 따라 적절한 `Trade-Off`가 필요하며, 트랜잭션 격리성 레벨이 바로 `Lock`의 강도를 조절하는 역할을 수행합니다. 트랜잭션 격리성 레벨의 종류는 다음과 같습니다.
+상황에 따라 적절한 `Trade-Off`가 필요하며, 트랜잭션 격리성 레벨이 바로 `Lock`의 강도를 조절하는 역할을 수행합니다. 트랜잭션 격리성 레벨의 종류는 다음과 같습니다. 하위 레벨은 상위 레벨을 포함합니다.
 
-| level              | desc                                                                                                                                                    |
-| :----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Read uncommitted` | 커밋하지 않은 데이터도 읽거나 수정할 수 있음. 소형 데이터베이스는 행에 락을 걸지 않는 방식으로 구현하지만, `PostgreSQL`은 미래의 `XID`도 읽어서 구현함. |
-| `Read committed`   | 커밋된 데이터만 읽을 수 있음. 소형 데이터베이스는 행에 락을 걸는 방식으로 구현하지만, `PostgreSQL`은 과거의 `XID`만 읽어서 구현함. (기본값)             |
-| `Repeatable read`  | 테이블에 공유 락을 걸음. 다른 트랜잭션에서 데이터를 수정하지 못함. 조회는 가능.                                                                         |
-| `Serializable`     | 테이블에 배타 락을 걸음. 다른 트랜잭션에서 데이터를 조회하거나 수정하지 못함. 해당 트랜잭션이 종료될 때 까지 기다려야 함.                               |
+| level                      | desc                                                                                              |
+| :------------------------- | ------------------------------------------------------------------------------------------------- |
+| `Read uncommitted`         | 커밋하지 않은 데이터도 읽거나 수정할 수 있음.                                                     |
+| `Read committed` (default) | 커밋된 데이터만 읽거나 수정할 수 있음.                                                            |
+| `Repeatable read`          | 동시에 어떤 테이블이 변경(`INSERT` or `UPDATE` or `DELETE`)되는 것을 방지.                        |
+| `Serializable`             | 동시에 어떤 테이블이 변경&조회((`INSERT` or `UPDATE` or `DELETE`) and (`SELECT`)) 되는 것을 방지. |
 
 <br/>
 
@@ -259,7 +259,7 @@ SET TRANSACTION ISOLATION LEVEL { SERIALIZABLE | REPEATABLE READ | READ COMMITTE
 
 #### Dirty Read
 
-커밋되지 않은 튜플이 보이는 현상입니다. 다만 모든 격리성 레벨에서 `inactive` 트랜잭션의 변경점을 볼 수 없기 때문에, 어떠한 격리성 레벨에서든 `Dirty Read`가 발생하지 않습니다.
+커밋되지 않은 튜플이 보이는 현상입니다. 다만 `PostgreSQL`은 모든 격리성 레벨에서 `inactive` 트랜잭션의 변경점을 볼 수 없기 때문에, 어떠한 격리성 레벨에서든 `Dirty Read`가 발생하지 않습니다.
 
 ※ 표준에서는 `READ COMMITTED` 이상을 사용해야 해결되도록 명시하고 있습니다.
 
@@ -291,7 +291,9 @@ CREATE TABLE Point2D (
 
 #### Nonrepeatable Read
 
-테이블을 연속으로 읽은 경우, 내용이 변경된 행이 발견되는 현상입니다. `READ COMMITTED`이하의 격리성 레벨은 자신보다 이후에 일어난 `inactive` 트랜잭션의 변경점도 읽기 때문에 발생합니다. `REPEATABLE READ` 이상의 격리성 레벨을 사용해야 해결됩니다.
+테이블을 연속으로 읽었는데, `내용이 변경된 행`이 발견되는 현상입니다. 두 번의 조회 중간에 다른 트랜잭션이 데이터를 변경했을 때 발생합니다. `READ COMMITTED`이하의 격리성 레벨은 자신보다 이후에 일어난 `inactive` 트랜잭션의 변경점도 읽기 때문에 발생합니다. `REPEATABLE READ` 이상의 격리성 레벨을 사용하면, `테이블의 동시 갱신`을 방지하므로 해결할 수 있습니다.
+
+※ 다른 데이터베이스는 행에 락을 거는 방식으로 구현합니다.
 
 ```sql
 CREATE TABLE Point2D (
@@ -318,7 +320,9 @@ INSERT INTO Point2D VALUES (0, 0);
 
 #### Phantom Read
 
-테이블을 연속으로 읽은 경우, 새롭게 추가된 행이 발견되는 현상입니다. `READ COMMITTED`이하의 격리성 레벨은 자신보다 이후에 일어난 `inactive` 트랜잭션의 변경점도 읽기 때문에 발생합니다. `REPEATABLE READ` 이상의 격리성 레벨을 사용해야 해결됩니다.
+테이블을 연속으로 읽었는데, `새롭게 추가된 행`이 발견되는 현상입니다. 두 번의 조회 중간에 다른 트랜잭션이 데이터를 삽입했을 때 발생합니다. `READ COMMITTED`이하의 격리성 레벨은 자신보다 이후에 일어난 `inactive` 트랜잭션의 변경점도 읽기 때문에 발생합니다. `REPEATABLE READ` 이상의 격리성 레벨을 사용하면, 자신보다 이후에 일어난 `inactive` 트랜잭션을 읽지 않으므로 해결할 수 있습니다.
+
+※ 다른 데이터베이스는 테이블에 락을 거는 방식으로 구현합니다.
 
 ※ 표준에서는 `SERIALIZABLE`를 사용해야 해결되도록 명시하고 있습니다.
 
@@ -347,11 +351,11 @@ CREATE TABLE Point2D (
 
 #### Write-Write Confilct
 
-이것은 이상현상이 아니지만, `REPEATABLE READ` 격리성 수준의 중요한 특성 중 하나입니다. 두 개의 쓰기 트랜잭션이 하나의 행을 동시에 수정하는 상황을 가정하겠습니다.
+`REPEATABLE READ` 이상의 격리성 수준은 `테이블의 동시 갱신(UPDATE)`을 배제합니다.
 
 <br/>
 
-먼저 `UPDATE`문에 도달한 트랜잭션은 `행에 대한 배타적 락`을 성공적으로 획득하고, 뒤늦게 `UPDATE`문에 도달한 트랜잭션은 `행에 대한 배타적 락`을 얻으려고 시도하지만, 첫 번째 트랜잭션이 얻은 락과 충돌이 발생하므로 선행 트랜잭션이 `COMMIT` 또는 `ROLLBACK`을 날려서 락을 풀어줄 때 까지 대기합니다.
+두 개의 쓰기 트랜잭션이 같은 행을 동시에 수정하는 상황을 가정해보면, 더 빨리 `UPDATE`문에 도달한 트랜잭션은 `테이블에 대한 배타적 락`을 성공적으로 획득하고, 뒤늦게 `UPDATE`문에 도달한 트랜잭션은 `테이블에 대한 배타적 락`을 얻으려고 시도하지만, 첫 번째 트랜잭션이 얻은 락과 충돌이 발생하므로 선행 트랜잭션이 `COMMIT` 또는 `ROLLBACK`을 날려서 락이 해제될 때 까지 대기합니다. (이것은 모든 격리성 레벨에서 적용됩니다.)
 
 <br/>
 
@@ -403,123 +407,59 @@ ERROR:  could not serialize access due to concurrent update
 
 <br/>
 
-격리성 수준이 `READ COMMITTED` 이하인 경우 `COMMIT`을 날려도 에러가 발생하지 않습니다. 해당 격리성 수준에서는 `Nonrepeatable Read`가 발생할 수 있으므로, 후행 트랜잭션이 선행 트랜잭션의 변경점을 볼 수 있기 때문입니다. 즉, 후행 트랜잭션은 선행 트랜잭션의 결과를 기준으로 갱신을 시도합니다.
+격리성 수준이 `READ COMMITTED` 이하인 경우 `COMMIT`을 날려도 에러가 발생하지 않습니다. 해당 격리성 수준에서는 `Nonrepeatable Read`가 발생하므로, 후행 트랜잭션이 선행 트랜잭션의 변경점을 볼 수 있기 때문입니다. 다만, 후행 트랜잭션이 선행 트랜잭션의 결과를 덮어쓰는 `Lost Update`현상이 발생할 수 있습니다.
 
-| tx1                                                | tx2                                                                                      |
-| -------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `BEGIN;`                                           |                                                                                          |
-| `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;` |                                                                                          |
-|                                                    | `BEGIN;`                                                                                 |
-|                                                    | `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;`                                       |
-| `UPDATE Point2D SET (x, y) = (1, 1);`              |                                                                                          |
-|                                                    | `UPDATE Point2D SET (x, y) = (x+1, y+1);` -- 대기                                        |
-| `COMMIT;`                                          |                                                                                          |
-|                                                    | `UPDATE Point2D SET (x, y) = (x+1, y+1);` -- 성공                                        |
-|                                                    | `SELECT * FROM Point2D;` <br/> x ㅣ y <br/> -------- <br/> 2 ㅣ 2 <br/> 1 rows affected. |
-|                                                    | `COMMIT;`                                                                                |
+| tx1                                                | tx2                                                |
+| -------------------------------------------------- | -------------------------------------------------- |
+| `BEGIN;`                                           |                                                    |
+| `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;` |                                                    |
+|                                                    | `BEGIN;`                                           |
+|                                                    | `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;` |
+| `UPDATE Point2D SET (x, y) = (1, 1);`              |                                                    |
+|                                                    | `UPDATE Point2D SET (x, y) = (2, 2);` -- 대기      |
+| `COMMIT;`                                          |                                                    |
+|                                                    | `UPDATE Point2D SET (x, y) = (2, 2);` -- 성공      |
+|                                                    | `COMMIT;`                                          |
+
+`tx2`가 `tx1`의 내용을 덮었기 때문에, 최종 결과는 다음과 같습니다.
+
+| x   | y   |
+| --- | --- |
+| 2   | 2   |
 
 <br/>
 
 #### Serialization Anomaly
 
-같은 상황에서 같은 트랜잭션 그룹을 실행했는데, 각각의 트랜잭션의 결과가 매번 달라지는 현상입니다. `SERIALIZABLE` 격리성 레벨을 사용해야 해결됩니다.
+선행 트랜잭션의 진행 중에 다른 트랜잭션이 끼어드는 바람에, 선행 트랜잭션이 일부 튜플을 누락한 현상을 `직렬화 이상`이라고 합니다. 시나리오를 가정해보겠습니다. 아래의 순서도에서 각각의 `SELECT COUNT(*) FROM Point2D;` 은 어떤 값을 출력할까요? 초기 테이블은 비어있다고 가정합니다.
 
 ```sql
 CREATE TABLE Point2D (
     x int,
     y int
 );
-
-INSERT INTO Point2D VALUES (0, 0);
 ```
-
-<br/>
-
-아래와 같이 두 개의 트랜잭션을 정의해보겠습니다. 이 트랜잭션 그룹을 동시에 실행한다면 각각의 `SELECT SUM(x) FROM Point2D;`은 어떤 값을 출력할까요?
 
 | tx1                                                | tx2                                                |
 | -------------------------------------------------- | -------------------------------------------------- |
-| `BEGIN;`                                           | `BEGIN;`                                           |
-| `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;` | `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;` |
-| `INSERT INTO Point2D VALUES (1, 1);`               | `INSERT INTO Point2D VALUES (2, 2);`               |
-| `SELECT SUM(x) FROM Point2D;`                      | `SELECT SUM(x) FROM Point2D;`                      |
-| `COMMIT;`                                          | `COMMIT;`                                          |
+| `BEGIN;`                                           |                                                    |
+| `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;` |                                                    |
+| `INSERT INTO Point2D VALUES (1, 1);`               |                                                    |
+|                                                    | `BEGIN;`                                           |
+|                                                    | `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;` |
+|                                                    | `INSERT INTO Point2D VALUES (2, 2);`               |
+|                                                    | `SELECT COUNT(*) FROM Point2D;` -- 1               |
+|                                                    | `COMMIT;`                                          |
+| `SELECT COUNT(*) FROM Point2D;` -- 1               |                                                    |
+| `COMMIT;`                                          |                                                    |
 
 <br/>
 
-정답은 `상황마다 다르다`입니다. 먼저 `tx1`이 수행된 이후에 `tx2`가 수행되었다면, 각각 `1`과 `3`이 출력됩니다.
-
-| tx1                                                         | tx2                                                         |
-| ----------------------------------------------------------- | ----------------------------------------------------------- |
-| `BEGIN;`                                                    |                                                             |
-| `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;`          |                                                             |
-| `INSERT INTO Point2D VALUES (1, 1);`                        |                                                             |
-| `SELECT SUM(x) FROM Point2D;` <br/> sum <br/> ----- <br/> 1 |                                                             |
-| `COMMIT;`                                                   |                                                             |
-|                                                             | `BEGIN;`                                                    |
-|                                                             | `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;`          |
-|                                                             | `INSERT INTO Point2D VALUES (2, 2);`                        |
-|                                                             | `SELECT SUM(x) FROM Point2D;` <br/> sum <br/> ----- <br/> 3 |
-|                                                             | `COMMIT;`                                                   |
+`tx1` 관점에서 살펴보겠습니다. `REPETABLE READ` 레벨에서는 후행 트랜잭션의 결과가 보이지 않기 때문에 1을 출력하겠지만, `SELECT`가 실행되기 전에 후행 트랜잭션이 `(2, 2)`을 삽입하고 커밋까지 해버린 것을 눈여겨봐야 합니다. 정말로 결과가 1이 맞는걸까요? `SELECT`가 실행된 시점에서는 데이터베이스에 2개의 튜플이 존재하고 있을텐데 말이죠. 모든 트랜잭션이 끝나고 다시 `SELECT COUNT(*) FROM Point2D;`를 날리면 2가 나올 것임이 명백합니다.
 
 <br/>
 
-마찬가지로 `tx2`가 수행된 이후에 `tx1`가 수행되었다면, 각각 `3`과 `2`가 출력됩니다.
-
-| tx1                                                         | tx2                                                         |
-| ----------------------------------------------------------- | ----------------------------------------------------------- |
-|                                                             | `BEGIN;`                                                    |
-|                                                             | `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;`          |
-|                                                             | `INSERT INTO Point2D VALUES (2, 2);`                        |
-|                                                             | `SELECT SUM(x) FROM Point2D;` <br/> sum <br/> ----- <br/> 2 |
-|                                                             | `COMMIT;`                                                   |
-| `BEGIN;`                                                    |                                                             |
-| `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;`          |                                                             |
-| `INSERT INTO Point2D VALUES (1, 1);`                        |                                                             |
-| `SELECT SUM(x) FROM Point2D;` <br/> sum <br/> ----- <br/> 3 |                                                             |
-| `COMMIT;`                                                   |                                                             |
-
-<br/>
-
-`tx1`과 `tx2`가 뒤섞였다면, 각각 `1`과 `2`가 출력됬겠죠.
-
-| tx1                                                         | tx2                                                         |
-| ----------------------------------------------------------- | ----------------------------------------------------------- |
-| `BEGIN;`                                                    |                                                             |
-| `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;`          |                                                             |
-|                                                             | `BEGIN;`                                                    |
-|                                                             | `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;`          |
-| `INSERT INTO Point2D VALUES (1, 1);`                        |                                                             |
-| `SELECT SUM(x) FROM Point2D;` <br/> sum <br/> ----- <br/> 1 |                                                             |
-| `COMMIT;`                                                   |                                                             |
-|                                                             | `INSERT INTO Point2D VALUES (2, 2);`                        |
-|                                                             | `SELECT SUM(x) FROM Point2D;` <br/> sum <br/> ----- <br/> 2 |
-|                                                             | `COMMIT;`                                                   |
-
-<br/>
-
-실제 환경에서 둘을 동시에 실행시키면, 셋 중에 어떤 순서로 실행될지 예측할 수 없기 때문에, 같은 상황에서 같은 트랜잭션 그룹을 실행해도 결과가 매번 달라지게 됩니다. 이것을 `Serialization Anomaly`라고 합니다.
-
-<br/>
-
-그런데 1, 2번째 상황은 유효한 케이스로 볼 수 있습니다. 어느 한 트랜잭션이 실행되고, 시간이 흐른 뒤에 다음 트랜잭션이 실행된 상황과 동일하기 때문이죠. 즉, 문제가 되는 것은 3번째 상황입니다.
-
-<br/>
-
-따라서 `SERIALIZABLE`은 3번째 상황을 해소하는데 사용됩니다. 첫 번째 트랜잭션의 `COMMIT`은 허용하고, 두 번째 트랜잭션의 `COMMIT`은 거부하는 형태로 말이죠. 3번째 상황을 `SERIALIZABLE`로 고쳐쓰면 다음과 같습니다.
-
-| tx1                                                         | tx2                                                         |
-| ----------------------------------------------------------- | ----------------------------------------------------------- |
-| `BEGIN;`                                                    |                                                             |
-| `SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;`             |                                                             |
-|                                                             | `BEGIN;`                                                    |
-|                                                             | `SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;`             |
-| `INSERT INTO Point2D VALUES (1, 1);`                        |                                                             |
-| `SELECT SUM(x) FROM Point2D;` <br/> sum <br/> ----- <br/> 1 |                                                             |
-| `COMMIT;` -- OK                                             |                                                             |
-|                                                             | `INSERT INTO Point2D VALUES (2, 2);`                        |
-|                                                             | `SELECT SUM(x) FROM Point2D;` <br/> sum <br/> ----- <br/> 2 |
-|                                                             | `COMMIT;` -- ERROR                                          |
+위와 같은 이상현상은 `동일 테이블에 읽기와 쓰기를 시도`하려는 트랜잭션이 2개 이상 있을 경우에 발견됩니다. `SERIALIZABLE`은 위와같은 직렬화 이상을 감지하면, 선착순 하나만 커밋을 허용하고, 나머지는 커밋을 거부합니다. 이것은 N개의 경쟁자 중 오직 하나만 `읽기/쓰기`가 허락된다고 볼 수 있습니다. `SERIALIZABLE`이 커밋을 거부하면, 실패한 트랜잭션을 처음부터 다시 시도해야 하며, 이것을 성공할 때 까지 반복해야 합니다.
 
 ```text
 ERROR:  could not serialize access due to read/write dependencies among transactions
@@ -530,8 +470,6 @@ ERROR:  could not serialize access due to read/write dependencies among transact
 ```
 
 <br/>
-
-3번째 상황으로 인해 `SERIALIZABLE`이 커밋을 거부하면, 실패한 트랜잭션을 처음부터 다시 시도해야 하며, 이것을 성공할 때 까지 반복해야 합니다.
 
 ---
 
