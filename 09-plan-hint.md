@@ -339,3 +339,157 @@ EXPLAIN SELECT * FROM LOCATION OFFSET 100000;
  Limit  (cost=1540.60..15406.01 rows=900001 width=16)
    ->  Seq Scan on location  (cost=0.00..15406.01 rows=1000001 width=16)
 ```
+
+<br/>
+
+## 조인
+
+### Nested Loop Join
+
+`Nested Loop`를 통해 두 테이블에서 발생할 수 있는 모든 튜플을 생성한 뒤, 조인 조건에 일치하는 튜플만 골라냅니다. `최초 N건 가져오기`에 매우 적합하며, 의사코드로 표현하면 다음과 같습니다.
+
+```cpp
+for(auto outerRow : outerTable){
+      for(auto innerRow : innerTable){
+            if(outerRow.id == innerRow.id){
+                  out(outerRow, innerRow);
+            }
+      }
+}
+```
+
+<br/>
+
+#### With Seq Scan
+
+`Nested Loop Join`의 기본 매커니즘은 `Outer Table`의 행 개수만큼 `Inner Table`의 모든 아이템을 반복적으로 조회(=`Seq Scan`)하는 것이므로 성능에 매우 불리합니다. 이것은 개념상으로만 존재하는 실행계획이며, 실제 환경에서는 데이터베이스가 `Sort-Merge Join`으로 변경하여 최적화를 시도합니다.
+
+![](./images/09-08.png)
+
+<br/>
+
+#### With Index Scan
+
+두 테이블 중 하나라도 조인컬럼에 인덱스가 걸려있다면 `Seq Scan`대신 `Index Scan`을 사용하여 매우 드라마틱한 성능 향상을 기대할 수 있습니다. 두 테이블 중 하나만 인덱스가 걸려있는 경우 인덱스가 걸려있는 테이블을 `Inner Table`로 고정합니다. 만약 두 테이블 모두 인덱스가 걸려있는 경우, 행의 개수가 적은것을 `Outer Table`로 고정합니다. 왜냐하면 `Index Scan`의 발생횟수는 `Outer Table`의 행 개수와 같기 때문에, `Outer Table`이 작아야만 `Index Scan` 횟수를 줄일 수 있기 때문입니다.
+
+![](./images/09-09.png)
+
+<br/>
+
+`Outer Table`의 크기가 실제 실행계획에 영향을 주는지 테스트해보겠습니다. 아래의 쿼리는 다음 같은 순서로 수행됩니다.
+
+```sql
+SELECT * FROM Location, Building
+WHERE id = location_id AND id < 10 AND location_id < 10000
+LIMIT 5;
+```
+
+**쿼리 순서 :**
+
+1. `Location`에서 `id < 10`인 항목을 추출한다.
+2. `Building`에서 `location_id < 10000`인 항목을 추출한다.
+3. `id = location_id`인 항목을 5건만 추출한다.
+
+<br/>
+
+`Location`에서 읽은 데이터가 `Building`에서 읽은 데이터보다 적으므로, 실행계획에서 `Location`이 `Outer Table`로 선택될 가능성이 매우 높습니다. 실제로 위의 쿼리의 실행계획을 살펴보면, `Location`이 `Building`보다 위에 있으므로 `Outer Table`로 선택된 것을 확인할 수 있습니다.
+
+```text
+ QUERY PLAN
+----------------------------------------------------------------------------------------
+ Limit  (cost=0.85..93.05 rows=1 width=53) (actual time=0.010..0.031 rows=5 loops=1)
+   ->  Nested Loop  (cost=0.85..93.05 rows=1 width=53) (actual time=0.010..0.030 rows=5 loops=1)
+         ->  Index Scan using location_pkey on location  (cost=0.42..8.60 rows=10 width=16) (actual time=0.004..0.005 rows=8 loops=1)
+               Index Cond: (id < 10)
+         ->  Index Scan using building_pkey on building  (cost=0.42..8.45 rows=1 width=37) (actual time=0.002..0.002 rows=1 loops=8)
+               Index Cond: ((location_id = location.id) AND (location_id < 10000))
+```
+
+<br/>
+
+반대로 `Building`에서 읽은 데이터가 더 작다면 `Building`이 `Outer Table`로 선택될 것 입니다.
+
+```text
+SELECT * FROM Location, Building
+WHERE id = location_id AND id < 10000 AND location_id < 10
+LIMIT 5;
+
+ QUERY PLAN
+----------------------------------------------------------------------------------------
+ Limit  (cost=0.85..91.66 rows=1 width=53) (actual time=0.013..0.031 rows=5 loops=1)
+   ->  Nested Loop  (cost=0.85..91.66 rows=1 width=53) (actual time=0.012..0.029 rows=5 loops=1)
+         ->  Index Scan using building_pkey on building  (cost=0.42..32.55 rows=7 width=37) (actual time=0.004..0.011 rows=5 loops=1)
+               Index Cond: (location_id < 10)
+         ->  Index Scan using location_pkey on location  (cost=0.42..8.45 rows=1 width=16) (actual time=0.003..0.003 rows=1 loops=5)
+               Index Cond: ((id = building.location_id) AND (id < 10000))
+```
+
+<br/>
+
+### Sort Merge Join
+
+조인량이 많아 `Nested Loop Join`으로 처리하기 벅차다면 `Sort Merge Join`을 고려합니다. `Outer Table`과 `Inner Table`을 조인 컬럼으로 정렬하고 조인을 수행한 뒤 결과들을 전부 합쳐서 반환합니다. `Outer Table`과 `Inner Table`을 한번씩만 읽기 때문에 대용량 테이블의 조인에 효과적이지만, `정렬 작업`이 어마무시하다고 판단되면 다른 조인 방식이 선택될 수 있습니다. 하지만 조인 컬럼에 인덱스가 걸려 있다면, 이를 사용하여 정렬 작업을 생략할 수 있습니다.
+
+![](./images/09-10.png)
+
+아래의 예시를 보면, `Nested Loop Join`로 처리할 경우에는 `Inner Table Scan`이 1000번 가량 발생되기 때문에, 차라리 `Merge Join`이 낫다고 판단한 것을 확인할 수 있습니다.
+
+```text
+SELECT * FROM Location, Building
+WHERE id = location_id
+LIMIT 1000;
+
+ QUERY PLAN
+----------------------------------------------------------------------------------------
+ Limit  (cost=3.06..131.73 rows=1000 width=53) (actual time=0.014..1.760 rows=1000 loops=1)
+   ->  Merge Join  (cost=3.06..81299.05 rows=631802 width=53) (actual time=0.013..1.687 rows=1000 loops=1)
+         Merge Cond: (location.id = building.location_id)
+         ->  Index Scan using location_pkey on location  (cost=0.42..31389.44 rows=1000001 width=16) (actual time=0.006..0.259 rows=1582 loops=1)
+         ->  Index Scan using building_pkey on building  (cost=0.42..39513.45 rows=631802 width=37) (actual time=0.004..0.976 rows=1000 loops=1)
+```
+
+<br/>
+
+하지만 `LIMIT`의 수가 적다면 `Inner Table Scan`도 적어지기 때문에 `Nested Loop Join`으로 풀릴 수 있습니다.
+
+```text
+SELECT * FROM Location, Building
+WHERE x = location_id
+LIMIT 10;
+
+ QUERY PLAN
+----------------------------------------------------------------------------------------
+ Limit  (cost=0.42..5.30 rows=10 width=53) (actual time=0.025..0.115 rows=10 loops=1)
+   ->  Nested Loop  (cost=0.42..487942.36 rows=1000001 width=53) (actual time=0.024..0.114 rows=10 loops=1)
+         ->  Seq Scan on location  (cost=0.00..15406.01 rows=1000001 width=16) (actual time=0.013..0.015 rows=18 loops=1)
+         ->  Index Scan using building_pkey on building  (cost=0.42..0.47 rows=1 width=37) (actual time=0.005..0.005 rows=1 loops=18)
+               Index Cond: (location_id = location.x)
+```
+
+<br/>
+
+### Hash Join
+
+대용량이지만 `Sort Merge Join`에서 정렬을 수행하기 벅찬경우, 정렬 대신에 `해싱`이 선택될 수 있습니다. `Inner Table`의 각 튜플을 해싱하고, 같은 해시값을 갖는 튜플을 모아서 메인 메모리에 적재한 뒤, `Outer Table`의 각 튜플 해시값과 비교하면서 조인을 진행합니다.
+
+<br/>
+
+`Nested Loop Join`처럼 여러번 스캔하지도 않고, `Sort Merge Join`처럼 정렬부하도 없지만, 해시의 특성상 동등비교 이외에는 사용될 수 없습니다. 또한, 해시 테이블이 메인 메모리에 적재되어야 하기 때문에 `Inner Table`의 크기가 작아야 유리합니다.
+
+![](./images/09-11.jpg)
+
+아래 예제에서 크기가 더 작은 `Building`이 `Inner Table`로 선택되었음을 확인할 수 있습니다.
+
+```text
+SELECT * FROM Location, Building
+WHERE x = location_id;
+
+ QUERY PLAN
+----------------------------------------------------------------------------------------
+ Hash Join  (cost=24417.55..57150.58 rows=1000001 width=53) (actual time=206.794..938.995 rows=629577 loops=1)
+   Hash Cond: (location.x = building.location_id)
+   ->  Seq Scan on location  (cost=0.00..15406.01 rows=1000001 width=16) (actual time=0.015..67.029 rows=1000001 loops=1)
+   ->  Hash  (cost=11584.02..11584.02 rows=631802 width=37) (actual time=202.027..202.027 rows=631802 loops=1)
+         Buckets: 65536  Batches: 16  Memory Usage: 3166kB
+         ->  Seq Scan on building  (cost=0.00..11584.02 rows=631802 width=37) (actual time=0.011..42.686 rows=631802 loops=1)
+```
